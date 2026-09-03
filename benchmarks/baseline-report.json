@@ -5,16 +5,16 @@
       "timeout-recovery"
     ],
     "invalid_output_rate_delta": 0.0,
-    "p50_latency_ms_delta": 5.252600000000005,
-    "p95_latency_ms_delta": -11.172399999999996,
+    "p50_latency_ms_delta": 6.1508,
+    "p95_latency_ms_delta": -8.243399999999994,
     "recovery_rate_delta": 1.0,
     "retry_attempt_count_delta": 2,
     "task_correctness_rate_delta": 0.33333333333333337,
     "tool_sequence_accuracy_delta": 0.05555555555555558,
     "unnecessary_call_count_delta": 0
   },
-  "evaluation_id": "20f0b046-2170-4b03-9242-aece6a59ee74",
-  "generated_at": "2026-09-03T20:28:20.536864Z",
+  "evaluation_id": "283d42c8-3249-4537-b6f5-985282368a26",
+  "generated_at": "2026-09-03T20:47:26.661437Z",
   "modes": {
     "fragile": {
       "cases": [
@@ -72,10 +72,39 @@
             "get_deployment",
             "prepare_rollback"
           ],
+          "final_result": {
+            "evidence_refs": [
+              "deployment",
+              "approval"
+            ],
+            "outcome": "prepared",
+            "summary": "Rollback was prepared after durable approval reconstruction."
+          },
+          "final_status": "succeeded",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 71515400,
+          "latency_ns": 66226700,
+          "logical_actions": [
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "prepare_rollback"
+            },
+            {
+              "action_fingerprint": "2c8ad720fe0e5f32e5e835403f4ec33458738872abfed4642c58cca29f7e90a2",
+              "action_step": 2,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -85,7 +114,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "3e15ad5f-1e0b-473f-a416-0676a82260f7",
+          "run_id": "1f542346-11ca-4434-9ef1-3c260bcb8b15",
           "scenario_id": "approval-reconstruction",
           "scenario_path": "approval-reconstruction.yaml",
           "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
@@ -94,8 +123,142 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "1b298d5d6ed37b8321dfe59a7ad3e3f3c8db47345c11ef49d26e8c3834c606fc",
-          "trace_id": "dce16f1c-bf57-416e-a95d-c39a5e5761de",
+          "trace_digest": "3bdedaf98bffcaa295b89f221ca230f2bae9dba061b8fd959433693066fed720",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {
+                  "deployment_id": "deploy-2026-09-04-001"
+                },
+                "idempotency_key": "approval-reconstruction-v1",
+                "tool_name": "prepare_rollback",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "run.waiting_approval",
+              "payload": {
+                "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+                "step": 1,
+                "tool_name": "prepare_rollback"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "approval.recorded",
+              "payload": {
+                "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+                "action_step": 1,
+                "actor": "evaluation-reviewer",
+                "allow": true
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "waiting_approval"
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {
+                  "deployment_id": "deploy-2026-09-04-001"
+                },
+                "idempotency_key": "approval-reconstruction-v1",
+                "tool_name": "prepare_rollback",
+                "type": "call_tool"
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "prepare_rollback"
+              },
+              "sequence": 11
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "prepare_rollback"
+              },
+              "sequence": 12
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 2,
+                "evidence_refs": [
+                  "deployment",
+                  "approval"
+                ],
+                "outcome": "prepared",
+                "summary": "Rollback was prepared after durable approval reconstruction.",
+                "type": "finish"
+              },
+              "sequence": 14
+            },
+            {
+              "event_type": "run.succeeded",
+              "payload": {
+                "evidence_refs": [
+                  "deployment",
+                  "approval"
+                ],
+                "outcome": "prepared",
+                "summary": "Rollback was prepared after durable approval reconstruction."
+              },
+              "sequence": 15
+            }
+          ],
+          "trace_id": "713647c7-43e4-4e64-917b-c444568f5573",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 1
@@ -153,10 +316,34 @@
             "get_service_health",
             "get_deployment"
           ],
+          "final_result": {
+            "code": "invalid_output"
+          },
+          "final_status": "failed",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 1,
           "invalid_output_rejected_count": 1,
-          "latency_ns": 29804600,
+          "latency_ns": 28277500,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "6d9426e8b02fd84b7c002b99a55c60509c8168427ad92a9271852ad2c76af4b5",
+              "action_step": 2,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 1,
           "mode": "fragile",
@@ -181,7 +368,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "f80ff42a-9547-4975-819b-174fe705ea05",
+          "run_id": "6d494a94-a1aa-437c-8e4d-089d8265d5b4",
           "scenario_id": "malformed-output-rejected",
           "scenario_path": "malformed-output-rejected.yaml",
           "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
@@ -190,8 +377,107 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "b60111eade4824aff862dd39129927297c962c962304b11081400adb88c38c5e",
-          "trace_id": "d54bfdb2-bfec-4b70-96e1-e04b7149e8a1",
+          "trace_digest": "116268d68b3ff28a8a99fff524e35aac52e2cf47fc5f26e4f755c05c5f15abb8",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "fault.injected",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "invalid_output",
+                "kind": "malformed_output",
+                "tool_name": "get_deployment",
+                "transient": false
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "tool.output.validation_failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "invalid_output",
+                "source": "output_model",
+                "tool_name": "get_deployment"
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "tool.attempt.failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "invalid_output",
+                "tool_name": "get_deployment",
+                "transient": false
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "run.failed",
+              "payload": {
+                "code": "invalid_output"
+              },
+              "sequence": 11
+            }
+          ],
+          "trace_id": "37ad33ba-9685-45d0-8c3e-b9d6f6b8dc83",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -272,10 +558,46 @@
             "search_recent_logs",
             "get_deployment"
           ],
+          "final_result": {
+            "evidence_refs": [
+              "health",
+              "logs",
+              "deployment"
+            ],
+            "outcome": "diagnosed",
+            "summary": "Checkout degradation traced to the current deployment."
+          },
+          "final_status": "succeeded",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 40034000,
+          "latency_ns": 39149800,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 2,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "c0f6d9cb97fb1db16f619448038b1ec2cacf17c70a92b701600a7a1fe725dc55",
+              "action_step": 3,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 3,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -285,7 +607,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "4f721aa0-7519-4a35-9d4f-ac69126f3138",
+          "run_id": "7a146426-b0ed-4c4e-9e81-021288fa268b",
           "scenario_id": "normal-success",
           "scenario_path": "normal-success.yaml",
           "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
@@ -294,8 +616,132 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "226d805822abc88fedcaafa908200cdec7b2bdd1723194707c6921744dd875da",
-          "trace_id": "d3cd1f41-05de-400e-9666-1a885bc4139e",
+          "trace_digest": "8f6e42b1231ab836222713597b8dfe8c1c3ad5f63b2b373dd1be71c46128abe9",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 2,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 11
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 12
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 3,
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Checkout degradation traced to the current deployment.",
+                "type": "finish"
+              },
+              "sequence": 14
+            },
+            {
+              "event_type": "run.succeeded",
+              "payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Checkout degradation traced to the current deployment."
+              },
+              "sequence": 15
+            }
+          ],
+          "trace_id": "ecc0fc8f-d50b-48cc-b420-1b2cf1a7b504",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -318,10 +764,28 @@
           "expected_tool_sequence": [
             "search_recent_logs"
           ],
+          "final_result": {
+            "code": "invalid_input"
+          },
+          "final_status": "failed",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 15018000,
+          "latency_ns": 14165000,
+          "logical_actions": [
+            {
+              "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_fingerprint": "9c1c16f493b335e621f6c66e7bfa62674e29d75c80f3924d41b6ebef980ab6c9",
+              "action_step": 1,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 1,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -331,7 +795,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "14fcbfa6-7a2b-41ca-b5b2-6aef9f0c2406",
+          "run_id": "f37964eb-794e-447a-bcd7-eab7d642fcf3",
           "scenario_id": "permanent-invalid-input",
           "scenario_path": "permanent-invalid-input.yaml",
           "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
@@ -340,8 +804,37 @@
           "sequence_match_count": 1,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "5075c737b37818568e471bfda507c3d44e0d6e9f32d3ab79b32cf9c794694e6f",
-          "trace_id": "4d4d8e78-d024-4e05-856e-b7df5af8697d",
+          "trace_digest": "8ea4662c0d7f5800bcc038c6621e7e6a717fa99dea14333d16603db7e3c93161",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {
+                  "unsupported_filter": true
+                },
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "run.failed",
+              "payload": {
+                "code": "invalid_input"
+              },
+              "sequence": 3
+            }
+          ],
+          "trace_id": "098b2bdf-76d1-4b5c-b9b3-3f48b67263a0",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -399,10 +892,34 @@
             "get_service_health",
             "get_deployment"
           ],
+          "final_result": {
+            "code": "rate_limit"
+          },
+          "final_status": "failed",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 28462100,
+          "latency_ns": 26716400,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "340772312d15db9d88aa3cddb1a37a535c148d915af155f597a51062ca2ba816",
+              "action_step": 2,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -419,7 +936,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "3ba06c96-4c69-404a-9e6d-bf579400ceda",
+          "run_id": "512815bf-76c2-404b-a0f5-e1372a53db44",
           "scenario_id": "rate-limit-recovery",
           "scenario_path": "rate-limit-recovery.yaml",
           "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
@@ -428,8 +945,96 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "de017c95d89b6b0ee233f29f81f9ee6a07fe48bbd4e6d45573ddc55bc3b96ce3",
-          "trace_id": "39ebdcb0-dc10-4423-9673-b1b6d87fc523",
+          "trace_digest": "e1b58d7f051660253a756596b27d6be86d1ced16474be0f4f29916f8642db95c",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "fault.injected",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "rate_limit",
+                "kind": "rate_limit",
+                "tool_name": "get_deployment",
+                "transient": true
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "tool.attempt.failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "rate_limit",
+                "tool_name": "get_deployment",
+                "transient": true
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "run.failed",
+              "payload": {
+                "code": "rate_limit"
+              },
+              "sequence": 10
+            }
+          ],
+          "trace_id": "b765f769-7583-4ba3-b994-f86948621b40",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -488,10 +1093,40 @@
             "search_recent_logs",
             "get_deployment"
           ],
+          "final_result": {
+            "code": "tool_timeout"
+          },
+          "final_status": "failed",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 29802300,
+          "latency_ns": 29213200,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 2,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "800424d7a8153f75e814cd5a0c02e15a3bfa3a12cb85fb8ce343d7e70653048a",
+              "action_step": 3,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -508,7 +1143,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "221a19a4-5932-4ba4-a004-c121755d9907",
+          "run_id": "62126f56-ef0c-4058-a844-214869506814",
           "scenario_id": "timeout-recovery",
           "scenario_path": "timeout-recovery.yaml",
           "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
@@ -517,8 +1152,96 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "6dc41b5db2878a1accf36f70da98415dea22dbe9c15f7db501371cd8eec21ad2",
-          "trace_id": "9ab7f9e4-b450-40d8-af18-dea56232ecb8",
+          "trace_digest": "e7d1329c7ac4088c17f6828665fad467fbdb04b966ce2286f2c652702701d51b",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "fault.injected",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "tool_timeout",
+                "kind": "timeout",
+                "tool_name": "search_recent_logs",
+                "transient": true
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "tool.attempt.failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "tool_timeout",
+                "tool_name": "search_recent_logs",
+                "transient": true
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "run.failed",
+              "payload": {
+                "code": "tool_timeout"
+              },
+              "sequence": 10
+            }
+          ],
+          "trace_id": "a9b0181b-2764-49a2-954a-107fba6ff405",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -536,8 +1259,8 @@
         "invalid_output_rate": 0.0,
         "invalid_output_rejected_count": 1,
         "malformed_fault_injected_count": 1,
-        "p50_latency_ms": 29.8023,
-        "p95_latency_ms": 71.5154,
+        "p50_latency_ms": 28.2775,
+        "p95_latency_ms": 66.2267,
         "recovered_transient_fault_count": 0,
         "recovery_rate": 0.0,
         "retry_attempt_count": 0,
@@ -606,10 +1329,39 @@
             "get_deployment",
             "prepare_rollback"
           ],
+          "final_result": {
+            "evidence_refs": [
+              "deployment",
+              "approval"
+            ],
+            "outcome": "prepared",
+            "summary": "Rollback was prepared after durable approval reconstruction."
+          },
+          "final_status": "succeeded",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 60343000,
+          "latency_ns": 57983300,
+          "logical_actions": [
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "prepare_rollback"
+            },
+            {
+              "action_fingerprint": "2c8ad720fe0e5f32e5e835403f4ec33458738872abfed4642c58cca29f7e90a2",
+              "action_step": 2,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -619,7 +1371,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "a7a7b138-b3a7-45d6-952f-9deedc975634",
+          "run_id": "7c0bdfa7-5a32-42ba-909a-7eab48085d47",
           "scenario_id": "approval-reconstruction",
           "scenario_path": "approval-reconstruction.yaml",
           "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
@@ -628,8 +1380,142 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "de2fc174e8b76afc5ae144fa469d084a12a634fdd317c226434bbb81232db575",
-          "trace_id": "fefd91a1-471c-4618-a0ce-d4704d71bcc1",
+          "trace_digest": "3bdedaf98bffcaa295b89f221ca230f2bae9dba061b8fd959433693066fed720",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {
+                  "deployment_id": "deploy-2026-09-04-001"
+                },
+                "idempotency_key": "approval-reconstruction-v1",
+                "tool_name": "prepare_rollback",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "run.waiting_approval",
+              "payload": {
+                "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+                "step": 1,
+                "tool_name": "prepare_rollback"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "approval.recorded",
+              "payload": {
+                "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+                "action_step": 1,
+                "actor": "evaluation-reviewer",
+                "allow": true
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "waiting_approval"
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {
+                  "deployment_id": "deploy-2026-09-04-001"
+                },
+                "idempotency_key": "approval-reconstruction-v1",
+                "tool_name": "prepare_rollback",
+                "type": "call_tool"
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "prepare_rollback"
+              },
+              "sequence": 11
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "prepare_rollback"
+              },
+              "sequence": 12
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 2,
+                "evidence_refs": [
+                  "deployment",
+                  "approval"
+                ],
+                "outcome": "prepared",
+                "summary": "Rollback was prepared after durable approval reconstruction.",
+                "type": "finish"
+              },
+              "sequence": 14
+            },
+            {
+              "event_type": "run.succeeded",
+              "payload": {
+                "evidence_refs": [
+                  "deployment",
+                  "approval"
+                ],
+                "outcome": "prepared",
+                "summary": "Rollback was prepared after durable approval reconstruction."
+              },
+              "sequence": 15
+            }
+          ],
+          "trace_id": "0d096650-77b6-49aa-ac50-8812b2846322",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 1
@@ -687,10 +1573,34 @@
             "get_service_health",
             "get_deployment"
           ],
+          "final_result": {
+            "code": "invalid_output"
+          },
+          "final_status": "failed",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 1,
           "invalid_output_rejected_count": 1,
-          "latency_ns": 29833100,
+          "latency_ns": 30711600,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "6d9426e8b02fd84b7c002b99a55c60509c8168427ad92a9271852ad2c76af4b5",
+              "action_step": 2,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 1,
           "mode": "resilient",
@@ -715,7 +1625,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "8c234e83-2084-4478-a54b-d36abac17607",
+          "run_id": "d80abbd6-a39a-4907-bb3c-ac0c65e6f748",
           "scenario_id": "malformed-output-rejected",
           "scenario_path": "malformed-output-rejected.yaml",
           "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
@@ -724,8 +1634,107 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "71bd2a3849af0e9400c9a86444adeda44b5d765c7c53733f73df1187850803e6",
-          "trace_id": "9e9455b4-96e0-4720-8f9c-f251dceb931c",
+          "trace_digest": "116268d68b3ff28a8a99fff524e35aac52e2cf47fc5f26e4f755c05c5f15abb8",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "fault.injected",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "invalid_output",
+                "kind": "malformed_output",
+                "tool_name": "get_deployment",
+                "transient": false
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "tool.output.validation_failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "invalid_output",
+                "source": "output_model",
+                "tool_name": "get_deployment"
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "tool.attempt.failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "invalid_output",
+                "tool_name": "get_deployment",
+                "transient": false
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "run.failed",
+              "payload": {
+                "code": "invalid_output"
+              },
+              "sequence": 11
+            }
+          ],
+          "trace_id": "ff391abb-911d-47b4-b51a-9ed7648a15fb",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -806,10 +1815,46 @@
             "search_recent_logs",
             "get_deployment"
           ],
+          "final_result": {
+            "evidence_refs": [
+              "health",
+              "logs",
+              "deployment"
+            ],
+            "outcome": "diagnosed",
+            "summary": "Checkout degradation traced to the current deployment."
+          },
+          "final_status": "succeeded",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 43036000,
+          "latency_ns": 38295100,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 2,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "c0f6d9cb97fb1db16f619448038b1ec2cacf17c70a92b701600a7a1fe725dc55",
+              "action_step": 3,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 3,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -819,7 +1864,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "cae431b9-52aa-4ae1-b6bd-a82ba665fc93",
+          "run_id": "2361a3a4-db94-4d2c-8cb0-d6431c54a2cc",
           "scenario_id": "normal-success",
           "scenario_path": "normal-success.yaml",
           "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
@@ -828,8 +1873,132 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "1df54492c7d28075ee0fb74968896b48be3aa02f55fd86d467a65fd6b43ac05a",
-          "trace_id": "3da7722c-6432-447a-ab8c-4864fef3e3be",
+          "trace_digest": "8f6e42b1231ab836222713597b8dfe8c1c3ad5f63b2b373dd1be71c46128abe9",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 2,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 11
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 12
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 3,
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Checkout degradation traced to the current deployment.",
+                "type": "finish"
+              },
+              "sequence": 14
+            },
+            {
+              "event_type": "run.succeeded",
+              "payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Checkout degradation traced to the current deployment."
+              },
+              "sequence": 15
+            }
+          ],
+          "trace_id": "dd6f757a-9692-4ce9-9e1d-a2075744c72f",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -852,10 +2021,28 @@
           "expected_tool_sequence": [
             "search_recent_logs"
           ],
+          "final_result": {
+            "code": "invalid_input"
+          },
+          "final_status": "failed",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 15993000,
+          "latency_ns": 14604900,
+          "logical_actions": [
+            {
+              "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_fingerprint": "9c1c16f493b335e621f6c66e7bfa62674e29d75c80f3924d41b6ebef980ab6c9",
+              "action_step": 1,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 1,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -865,7 +2052,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "2a037732-1d2f-47e8-aef3-29e94fe2ff3c",
+          "run_id": "7df55dfd-1dee-42e8-b6f7-0cc5454bcde1",
           "scenario_id": "permanent-invalid-input",
           "scenario_path": "permanent-invalid-input.yaml",
           "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
@@ -874,8 +2061,37 @@
           "sequence_match_count": 1,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "f62422f57557d57133f473c995932e93c0d6d08e7ce7e1f5bb760a754735b5a4",
-          "trace_id": "b9f80069-6ffc-47d7-b943-2d7236955c92",
+          "trace_digest": "8ea4662c0d7f5800bcc038c6621e7e6a717fa99dea14333d16603db7e3c93161",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {
+                  "unsupported_filter": true
+                },
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "run.failed",
+              "payload": {
+                "code": "invalid_input"
+              },
+              "sequence": 3
+            }
+          ],
+          "trace_id": "b9632486-c56c-47d4-ad78-18805db8d629",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -949,10 +2165,39 @@
             "get_service_health",
             "get_deployment"
           ],
+          "final_result": {
+            "evidence_refs": [
+              "health",
+              "deployment"
+            ],
+            "outcome": "diagnosed",
+            "summary": "Deployment evidence was collected after rate limiting cleared."
+          },
+          "final_status": "succeeded",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 35054900,
+          "latency_ns": 34428300,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "340772312d15db9d88aa3cddb1a37a535c148d915af155f597a51062ca2ba816",
+              "action_step": 2,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -969,7 +2214,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 1,
           "retry_attempt_count": 1,
-          "run_id": "b7bd8766-7e7b-435d-ac03-45e2a861f7ac",
+          "run_id": "c9398436-5be0-4967-8df7-f25d0f47cf17",
           "scenario_id": "rate-limit-recovery",
           "scenario_path": "rate-limit-recovery.yaml",
           "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
@@ -978,8 +2223,134 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "fe921b1eb5c8fa1006b26086958c242b23604d6397ce3b0f46d5efe2662b1bec",
-          "trace_id": "f314760d-87a2-4a58-92af-3fff90fdbc02",
+          "trace_digest": "9ac97c6cfd1dac411d711d80bfd8078cb196bba7103687a091bef73a6454f93b",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "fault.injected",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "rate_limit",
+                "kind": "rate_limit",
+                "tool_name": "get_deployment",
+                "transient": true
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "tool.attempt.failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "rate_limit",
+                "retry_delay_seconds": 0.1,
+                "tool_name": "get_deployment",
+                "transient": true
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 2,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 1,
+                "attempt": 2,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 11
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 2,
+                "evidence_refs": [
+                  "health",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Deployment evidence was collected after rate limiting cleared.",
+                "type": "finish"
+              },
+              "sequence": 13
+            },
+            {
+              "event_type": "run.succeeded",
+              "payload": {
+                "evidence_refs": [
+                  "health",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Deployment evidence was collected after rate limiting cleared."
+              },
+              "sequence": 14
+            }
+          ],
+          "trace_id": "ea3691d9-15c8-433f-bf84-078e446ba42c",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -1075,10 +2446,46 @@
             "search_recent_logs",
             "get_deployment"
           ],
+          "final_result": {
+            "evidence_refs": [
+              "health",
+              "logs",
+              "deployment"
+            ],
+            "outcome": "diagnosed",
+            "summary": "Investigation recovered after the transient timeout."
+          },
+          "final_status": "succeeded",
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 51189200,
+          "latency_ns": 42475000,
+          "logical_actions": [
+            {
+              "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_step": 0,
+              "kind": "call_tool",
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_step": 1,
+              "kind": "call_tool",
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_step": 2,
+              "kind": "call_tool",
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_fingerprint": "800424d7a8153f75e814cd5a0c02e15a3bfa3a12cb85fb8ce343d7e70653048a",
+              "action_step": 3,
+              "kind": "finish",
+              "tool_name": null
+            }
+          ],
           "logical_tool_call_count": 3,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -1095,7 +2502,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 1,
           "retry_attempt_count": 1,
-          "run_id": "2a9b2fd0-60a4-4068-b0e5-6c33a4f4d623",
+          "run_id": "f39bce38-fe97-4dc7-926c-84403d8285d8",
           "scenario_id": "timeout-recovery",
           "scenario_path": "timeout-recovery.yaml",
           "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
@@ -1104,8 +2511,165 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "558d2ce372e0afb7a3063e59b0638697aa46c42ca190a1ed09d8f4d11b8f2566",
-          "trace_id": "3600ed74-36f5-4b78-89b6-56bc787a0a2e",
+          "trace_digest": "5ccebb19759f53ef9612e2644aa4c5a1489588eb14d088bdf44bf556f78d6a3e",
+          "trace_evidence": [
+            {
+              "event_type": "run.running",
+              "payload": {
+                "from_status": "queued"
+              },
+              "sequence": 1
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 0,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
+              "sequence": 2
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 3
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "tool_name": "get_service_health"
+              },
+              "sequence": 4
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 1,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
+              "sequence": 6
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 7
+            },
+            {
+              "event_type": "fault.injected",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "tool_timeout",
+                "kind": "timeout",
+                "tool_name": "search_recent_logs",
+                "transient": true
+              },
+              "sequence": 8
+            },
+            {
+              "event_type": "tool.attempt.failed",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "code": "tool_timeout",
+                "retry_delay_seconds": 0.1,
+                "tool_name": "search_recent_logs",
+                "transient": true
+              },
+              "sequence": 9
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 1,
+                "attempt": 2,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 10
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 1,
+                "attempt": 2,
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 11
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 2,
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
+              "sequence": 13
+            },
+            {
+              "event_type": "tool.attempt.started",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 14
+            },
+            {
+              "event_type": "tool.attempt.succeeded",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "tool_name": "get_deployment"
+              },
+              "sequence": 15
+            },
+            {
+              "event_type": "policy.action",
+              "payload": {
+                "action_step": 3,
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Investigation recovered after the transient timeout.",
+                "type": "finish"
+              },
+              "sequence": 17
+            },
+            {
+              "event_type": "run.succeeded",
+              "payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Investigation recovered after the transient timeout."
+              },
+              "sequence": 18
+            }
+          ],
+          "trace_id": "5bb8f673-bcd9-4d77-afc6-6ab34bb09591",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -1123,8 +2687,8 @@
         "invalid_output_rate": 0.0,
         "invalid_output_rejected_count": 1,
         "malformed_fault_injected_count": 1,
-        "p50_latency_ms": 35.0549,
-        "p95_latency_ms": 60.343,
+        "p50_latency_ms": 34.4283,
+        "p95_latency_ms": 57.9833,
         "recovered_transient_fault_count": 2,
         "recovery_rate": 1.0,
         "retry_attempt_count": 2,
@@ -1146,49 +2710,239 @@
       "timeout_seconds": 1.0
     },
     "git_dirty": false,
-    "git_revision": "177f5a426de5026fa1c5ccb5623840643d2e1d3d",
-    "grader_version": "exact-v2",
+    "git_revision": "74112b3581594257886f3f0506b73386dc782c58",
+    "grader_version": "exact-v3",
     "latency_kind": "perf_counter_ns",
-    "normalization_version": "baseline-v2",
+    "normalization_version": "baseline-v3",
     "package_version": "0.1.0",
     "percentile_method": "nearest-rank",
     "policy_name": "scripted",
     "python_version": "3.12.13",
-    "report_version": "2",
-    "schema_version": "2",
-    "suite_hash": "665f6467abe216c13967ed01428a966d69340a5c9e3ceff0c4e96cf87d3671c8",
+    "report_version": "3",
+    "schema_version": "3",
+    "suite_hash": "80402b2928d47b57375607ffee3ebe0be6fd338f5b9ebfa64eaae76db0f2b251",
     "suite_manifest": [
       {
+        "approval_supplied": true,
+        "declared_faults": [],
+        "expected_outcome": "prepared",
+        "expected_tool_sequence": [
+          "get_deployment",
+          "prepare_rollback"
+        ],
+        "logical_actions": [
+          {
+            "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_step": 0,
+            "kind": "call_tool",
+            "tool_name": "get_deployment"
+          },
+          {
+            "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+            "action_step": 1,
+            "kind": "call_tool",
+            "tool_name": "prepare_rollback"
+          },
+          {
+            "action_fingerprint": "2c8ad720fe0e5f32e5e835403f4ec33458738872abfed4642c58cca29f7e90a2",
+            "action_step": 2,
+            "kind": "finish",
+            "tool_name": null
+          }
+        ],
         "relative_path": "approval-reconstruction.yaml",
         "scenario_id": "approval-reconstruction",
         "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
         "version": 1
       },
       {
+        "approval_supplied": false,
+        "declared_faults": [
+          {
+            "action_step": 1,
+            "attempt": 1,
+            "kind": "malformed_output",
+            "tool_name": "get_deployment"
+          }
+        ],
+        "expected_outcome": "invalid_output",
+        "expected_tool_sequence": [
+          "get_service_health",
+          "get_deployment"
+        ],
+        "logical_actions": [
+          {
+            "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_step": 0,
+            "kind": "call_tool",
+            "tool_name": "get_service_health"
+          },
+          {
+            "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_step": 1,
+            "kind": "call_tool",
+            "tool_name": "get_deployment"
+          },
+          {
+            "action_fingerprint": "6d9426e8b02fd84b7c002b99a55c60509c8168427ad92a9271852ad2c76af4b5",
+            "action_step": 2,
+            "kind": "finish",
+            "tool_name": null
+          }
+        ],
         "relative_path": "malformed-output-rejected.yaml",
         "scenario_id": "malformed-output-rejected",
         "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
         "version": 1
       },
       {
+        "approval_supplied": false,
+        "declared_faults": [],
+        "expected_outcome": "diagnosed",
+        "expected_tool_sequence": [
+          "get_service_health",
+          "search_recent_logs",
+          "get_deployment"
+        ],
+        "logical_actions": [
+          {
+            "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_step": 0,
+            "kind": "call_tool",
+            "tool_name": "get_service_health"
+          },
+          {
+            "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+            "action_step": 1,
+            "kind": "call_tool",
+            "tool_name": "search_recent_logs"
+          },
+          {
+            "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_step": 2,
+            "kind": "call_tool",
+            "tool_name": "get_deployment"
+          },
+          {
+            "action_fingerprint": "c0f6d9cb97fb1db16f619448038b1ec2cacf17c70a92b701600a7a1fe725dc55",
+            "action_step": 3,
+            "kind": "finish",
+            "tool_name": null
+          }
+        ],
         "relative_path": "normal-success.yaml",
         "scenario_id": "normal-success",
         "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
         "version": 1
       },
       {
+        "approval_supplied": false,
+        "declared_faults": [],
+        "expected_outcome": "invalid_input",
+        "expected_tool_sequence": [
+          "search_recent_logs"
+        ],
+        "logical_actions": [
+          {
+            "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+            "action_step": 0,
+            "kind": "call_tool",
+            "tool_name": "search_recent_logs"
+          },
+          {
+            "action_fingerprint": "9c1c16f493b335e621f6c66e7bfa62674e29d75c80f3924d41b6ebef980ab6c9",
+            "action_step": 1,
+            "kind": "finish",
+            "tool_name": null
+          }
+        ],
         "relative_path": "permanent-invalid-input.yaml",
         "scenario_id": "permanent-invalid-input",
         "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
         "version": 1
       },
       {
+        "approval_supplied": false,
+        "declared_faults": [
+          {
+            "action_step": 1,
+            "attempt": 1,
+            "kind": "rate_limit",
+            "tool_name": "get_deployment"
+          }
+        ],
+        "expected_outcome": "diagnosed",
+        "expected_tool_sequence": [
+          "get_service_health",
+          "get_deployment"
+        ],
+        "logical_actions": [
+          {
+            "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_step": 0,
+            "kind": "call_tool",
+            "tool_name": "get_service_health"
+          },
+          {
+            "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_step": 1,
+            "kind": "call_tool",
+            "tool_name": "get_deployment"
+          },
+          {
+            "action_fingerprint": "340772312d15db9d88aa3cddb1a37a535c148d915af155f597a51062ca2ba816",
+            "action_step": 2,
+            "kind": "finish",
+            "tool_name": null
+          }
+        ],
         "relative_path": "rate-limit-recovery.yaml",
         "scenario_id": "rate-limit-recovery",
         "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
         "version": 1
       },
       {
+        "approval_supplied": false,
+        "declared_faults": [
+          {
+            "action_step": 1,
+            "attempt": 1,
+            "kind": "timeout",
+            "tool_name": "search_recent_logs"
+          }
+        ],
+        "expected_outcome": "diagnosed",
+        "expected_tool_sequence": [
+          "get_service_health",
+          "search_recent_logs",
+          "get_deployment"
+        ],
+        "logical_actions": [
+          {
+            "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_step": 0,
+            "kind": "call_tool",
+            "tool_name": "get_service_health"
+          },
+          {
+            "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+            "action_step": 1,
+            "kind": "call_tool",
+            "tool_name": "search_recent_logs"
+          },
+          {
+            "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_step": 2,
+            "kind": "call_tool",
+            "tool_name": "get_deployment"
+          },
+          {
+            "action_fingerprint": "800424d7a8153f75e814cd5a0c02e15a3bfa3a12cb85fb8ce343d7e70653048a",
+            "action_step": 3,
+            "kind": "finish",
+            "tool_name": null
+          }
+        ],
         "relative_path": "timeout-recovery.yaml",
         "scenario_id": "timeout-recovery",
         "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
