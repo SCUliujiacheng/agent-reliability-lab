@@ -33,6 +33,9 @@ class FaultKind(StrEnum):
 
     TIMEOUT = "timeout"
     TRANSIENT_FAILURE = "transient_failure"
+    RATE_LIMIT = "rate_limit"
+    TOOL_ERROR = "tool_error"
+    MALFORMED_OUTPUT = "malformed_output"
 
 
 class FaultEvent(BaseModel):
@@ -60,12 +63,13 @@ class FaultRule(BaseModel):
         """Return a fault only for the exact configured action wire fields."""
         if self.tool_name != tool_name or self.attempt != attempt:
             return None
-        code = "tool_timeout" if self.kind is FaultKind.TIMEOUT else "transient_fault"
+        code = _fault_code(self.kind)
         return FaultEvent(
             tool_name=tool_name,
             attempt=attempt,
             kind=self.kind,
             code=code,
+            transient=self.kind is not FaultKind.MALFORMED_OUTPUT,
         )
 
 
@@ -95,10 +99,20 @@ class InjectedFault(TransientToolError):
     """A typed retryable error created from a matching fault rule."""
 
     def __init__(self, kind: FaultKind, *, tool_name: str) -> None:
-        code = "tool_timeout" if kind is FaultKind.TIMEOUT else "transient_fault"
+        code = _fault_code(kind)
         super().__init__(code, f"injected {kind} for {tool_name}")
         self.kind = kind
         self.tool_name = tool_name
+
+
+def _fault_code(kind: FaultKind) -> str:
+    return {
+        FaultKind.TIMEOUT: "tool_timeout",
+        FaultKind.TRANSIENT_FAILURE: "transient_fault",
+        FaultKind.RATE_LIMIT: "rate_limit",
+        FaultKind.TOOL_ERROR: "tool_error",
+        FaultKind.MALFORMED_OUTPUT: "invalid_output",
+    }[kind]
 
 
 def no_faults() -> FaultPlan:

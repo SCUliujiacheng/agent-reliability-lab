@@ -103,7 +103,12 @@ def test_store_persists_tool_results_approvals_and_evaluations(tmp_path: Path) -
         run.id, "lookup-1", {"status": "ok"}, owner_token="worker-a"
     )
     store.record_approval(
-        run.id, actor="operator", allow=True, reason="validated incident scope"
+        run.id,
+        actor="operator",
+        allow=True,
+        action_step=0,
+        action_fingerprint="a" * 64,
+        reason="validated incident scope",
     )
     store.save_evaluation(run.id, "recovery", {"score": 1.0})
 
@@ -115,8 +120,22 @@ def test_store_persists_tool_results_approvals_and_evaluations(tmp_path: Path) -
     assert approval["reason"] == "validated incident scope"
     assert store.get_evaluation(run.id, "recovery") == {"score": 1.0}
 
-    with pytest.raises(ValueError, match="already recorded"):
-        store.record_approval(run.id, actor="other", allow=False)
+    with pytest.raises(ValueError, match="conflict"):
+        store.record_approval(
+            run.id,
+            actor="other",
+            allow=False,
+            action_step=0,
+            action_fingerprint="a" * 64,
+        )
+    with pytest.raises(ValueError, match="fingerprint"):
+        store.record_approval(
+            run.id,
+            actor="operator",
+            allow=True,
+            action_step=1,
+            action_fingerprint="not-canonical",
+        )
 
 
 def test_tool_claim_allows_only_one_competing_worker_to_execute(tmp_path: Path) -> None:

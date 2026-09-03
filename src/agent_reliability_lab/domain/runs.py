@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_reliability_lab.domain.actions import CallToolAction
+
 
 class RunStatus(StrEnum):
     QUEUED = "queued"
@@ -48,6 +50,12 @@ class Run(BaseModel):
     policy_name: str = Field(default="scripted", min_length=1, max_length=128)
     context: dict[str, object] = Field(default_factory=dict)
     pending_approval: bool = False
+    pending_action: CallToolAction | None = None
+    pending_action_fingerprint: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    execution_owner: str | None = Field(default=None, min_length=1, max_length=128)
+    execution_lease_expires_at: datetime | None = None
     result: dict[str, object] | None = None
     version: int = Field(default=0, ge=0)
 

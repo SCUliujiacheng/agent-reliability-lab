@@ -24,6 +24,7 @@ from agent_reliability_lab.tools.contracts import (
     ToolRegistry,
 )
 from agent_reliability_lab.tools.faults import (
+    FaultKind,
     FaultPlan,
     InjectedFault,
     PermanentToolError,
@@ -94,26 +95,15 @@ class ToolGateway:
         self, run: Run, action: CallToolAction, faults: FaultPlan | None = None
     ) -> ToolCallResult:
         """Execute one known action through every durable safety boundary."""
+        action = self.stabilize_action(run, action)
+        failure = self.preflight(run, action, faults=faults, check_approval=True)
+        if failure is not None:
+            return failure
         definition = self._registry.get(action.tool_name)
-        if definition is None:
-            return ToolCallResult.failed("unknown_tool", attempts=0)
-        try:
-            validated_input = definition.input_model.model_validate(action.arguments)
-        except ValidationError:
-            return ToolCallResult.failed("invalid_input", attempts=0)
+        if definition is None:  # pragma: no cover - guaranteed by preflight.
+            raise AssertionError("preflight accepted an unknown tool")
+        validated_input = definition.input_model.model_validate(action.arguments)
         plan = faults or no_faults()
-        if any(self._registry.get(rule.tool_name) is None for rule in plan.rules):
-            return ToolCallResult.failed("invalid_fault_plan", attempts=0)
-        if definition.requires_approval:
-            approval = self.store.get_approval(run.id)
-            if approval is None:
-                return ToolCallResult.failed("approval_required", attempts=0)
-            if approval["allow"] is not True:
-                return ToolCallResult.failed("approval_denied", attempts=0)
-        if (definition.is_write or definition.requires_approval) and (
-            action.idempotency_key is None
-        ):
-            return ToolCallResult.failed("idempotency_key_required", attempts=0)
 
         owner_token: str | None = None
         request_fingerprint = _request_fingerprint(action.tool_name, validated_input)
@@ -178,15 +168,66 @@ class ToolGateway:
         return result
 
     def requires_approval(self, action: CallToolAction) -> bool:
-        """Report whether a registered, schema-valid action needs approval."""
+        """Report whether a registered action needs approval."""
         definition = self._registry.get(action.tool_name)
-        if definition is None or not definition.requires_approval:
-            return False
+        return definition is not None and definition.requires_approval
+
+    def stabilize_action(self, run: Run, action: CallToolAction) -> CallToolAction:
+        """Attach a deterministic key when the registered tool requires one."""
+        definition = self._registry.get(action.tool_name)
+        if (
+            definition is None
+            or action.idempotency_key is not None
+            or not (definition.is_write or definition.requires_approval)
+        ):
+            return action
+        canonical = json.dumps(
+            {
+                "run_id": str(run.id),
+                "step": run.current_step,
+                "tool_name": action.tool_name,
+                "arguments": action.arguments,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest = hashlib.sha256(canonical.encode()).hexdigest()
+        return action.model_copy(update={"idempotency_key": f"runtime-{digest}"})
+
+    def preflight(
+        self,
+        run: Run,
+        action: CallToolAction,
+        *,
+        faults: FaultPlan | None = None,
+        check_approval: bool,
+    ) -> ToolCallResult | None:
+        """Validate every non-executing gateway requirement in stable order."""
+        definition = self._registry.get(action.tool_name)
+        if definition is None:
+            return ToolCallResult.failed("unknown_tool", attempts=0)
         try:
             definition.input_model.model_validate(action.arguments)
         except ValidationError:
-            return False
-        return True
+            return ToolCallResult.failed("invalid_input", attempts=0)
+        plan = faults or no_faults()
+        if any(self._registry.get(rule.tool_name) is None for rule in plan.rules):
+            return ToolCallResult.failed("invalid_fault_plan", attempts=0)
+        if (definition.is_write or definition.requires_approval) and (
+            action.idempotency_key is None
+        ):
+            return ToolCallResult.failed("idempotency_key_required", attempts=0)
+        if definition.requires_approval and check_approval:
+            fingerprint = action_fingerprint(action)
+            approval = self.store.get_approval(run.id, action_step=run.current_step)
+            if approval is None:
+                return ToolCallResult.failed("approval_required", attempts=0)
+            if approval["action_fingerprint"] != fingerprint:
+                return ToolCallResult.failed("approval_mismatch", attempts=0)
+            if approval["allow"] is not True:
+                return ToolCallResult.failed("approval_denied", attempts=0)
+        return None
 
     async def _attempts(
         self,
@@ -197,7 +238,8 @@ class ToolGateway:
         context: ToolExecutionContext,
         faults: FaultPlan,
     ) -> ToolCallResult:
-        for attempt in range(1, definition.max_attempts + 1):
+        max_attempts = 1 if run.mode == "fragile" else definition.max_attempts
+        for attempt in range(1, max_attempts + 1):
             span_id = uuid4()
             self._record(
                 run,
@@ -216,6 +258,10 @@ class ToolGateway:
                         span_id=span_id,
                         status="error",
                     )
+                    if injected.kind is FaultKind.MALFORMED_OUTPUT:
+                        raise PermanentToolError(
+                            "invalid_output", "injected malformed tool output"
+                        )
                     raise InjectedFault(injected.kind, tool_name=action.tool_name)
                 raw = await self._invoke_with_timeout(
                     definition, validated_input, context
@@ -253,7 +299,7 @@ class ToolGateway:
 
             retry_delay = (
                 definition.delay_seconds(attempt)
-                if error.transient and attempt < definition.max_attempts
+                if error.transient and attempt < max_attempts
                 else None
             )
             payload: dict[str, JsonValue] = {
@@ -391,9 +437,21 @@ def _request_fingerprint(tool_name: str, validated_input: BaseModel) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def action_fingerprint(action: CallToolAction) -> str:
+    """Hash the complete normalized action approved at one durable cursor."""
+    canonical = json.dumps(
+        action.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 __all__ = [
     "PermanentToolError",
     "ToolCallResult",
     "ToolGateway",
     "TransientToolError",
+    "action_fingerprint",
 ]

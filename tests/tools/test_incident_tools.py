@@ -7,7 +7,7 @@ from agent_reliability_lab.domain.actions import CallToolAction
 from agent_reliability_lab.domain.runs import Run
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
-from agent_reliability_lab.tools.gateway import ToolGateway
+from agent_reliability_lab.tools.gateway import ToolGateway, action_fingerprint
 from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
 
 
@@ -63,7 +63,14 @@ def test_prepare_rollback_requires_approval_before_one_mutation(tmp_path: Path) 
     )
 
     denied = gateway.call_sync(run, action)
-    gateway.store.record_approval(run.id, actor="reviewer", allow=True, reason="safe")
+    gateway.store.record_approval(
+        run.id,
+        actor="reviewer",
+        allow=True,
+        action_step=run.current_step,
+        action_fingerprint=action_fingerprint(action),
+        reason="safe",
+    )
     allowed = gateway.call_sync(run, action)
 
     assert denied.status == "failed"
@@ -81,12 +88,16 @@ def test_prepare_rollback_returns_explicit_denial_without_a_mutation(
 ) -> None:
     """A recorded denial must be distinguishable from a missing review."""
     gateway, run, backend = _gateway(tmp_path)
-    gateway.store.record_approval(run.id, actor="reviewer", allow=False, reason="scope")
-
-    result = gateway.call_sync(
-        run,
-        _call("prepare_rollback", {"deployment_id": "deploy-2026-09-04-001"}),
+    action = _call("prepare_rollback", {"deployment_id": "deploy-2026-09-04-001"})
+    gateway.store.record_approval(
+        run.id,
+        actor="reviewer",
+        allow=False,
+        action_step=run.current_step,
+        action_fingerprint=action_fingerprint(action),
+        reason="scope",
     )
+    result = gateway.call_sync(run, action)
 
     assert result.error_code == "approval_denied"
     assert backend.rollback_preparations == 0

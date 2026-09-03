@@ -18,7 +18,10 @@ async def test_approval_run_reconstructs_and_resumes_exactly_once(
     assert completed.status is RunStatus.SUCCEEDED
     assert reconstructed.backend.rollback_preparations == 1
 
-    with pytest.raises(ValueError, match="already recorded"):
+    repeated = await reconstructed.runs.approve(run.id, actor="reviewer", allow=True)
+    assert repeated == completed
+
+    with pytest.raises(ValueError, match="conflict"):
         await reconstructed.runs.approve(run.id, actor="other", allow=True)
     assert reconstructed.backend.rollback_preparations == 1
 

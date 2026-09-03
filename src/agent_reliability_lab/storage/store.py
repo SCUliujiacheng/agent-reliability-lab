@@ -40,6 +40,10 @@ class ConcurrentUpdateError(RuntimeError):
     """Raised when a stale run snapshot loses a compare-and-swap update."""
 
 
+class RunExecutionConflictError(RuntimeError):
+    """Raised when another live worker owns a run execution lease."""
+
+
 class Base(DeclarativeBase):
     """Base declarative mapping for persistence records."""
 
@@ -90,6 +94,8 @@ class ToolResultRow(Base):
 class ApprovalRow(Base):
     __tablename__ = "approvals"
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    action_step: Mapped[int] = mapped_column(Integer, primary_key=True)
+    action_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     allow: Mapped[bool] = mapped_column(nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -113,6 +119,7 @@ class SQLiteRunStore:
         secret_values: set[str] | None = None,
         clock: Callable[[], datetime] | None = None,
         claim_lease_seconds: float = 30.0,
+        run_lease_seconds: float = 30.0,
     ) -> None:
         """Construct a store only from settings that confine its database path."""
         if not isinstance(settings, Settings):
@@ -123,8 +130,11 @@ class SQLiteRunStore:
         self._secret_values = secret_values or set()
         if claim_lease_seconds <= 0:
             raise ValueError("claim_lease_seconds must be positive")
+        if run_lease_seconds <= 0:
+            raise ValueError("run_lease_seconds must be positive")
         self._clock = clock or (lambda: datetime.now(UTC))
         self._claim_lease_seconds = claim_lease_seconds
+        self._run_lease_seconds = run_lease_seconds
         event.listen(self._engine, "connect", _configure_sqlite_connection)
 
     @classmethod
@@ -135,6 +145,7 @@ class SQLiteRunStore:
         secret_values: set[str] | None = None,
         clock: Callable[[], datetime] | None = None,
         claim_lease_seconds: float = 30.0,
+        run_lease_seconds: float = 30.0,
     ) -> "SQLiteRunStore":
         """Construct a SQLite store from settings validated by the same boundary."""
         return cls(
@@ -142,6 +153,7 @@ class SQLiteRunStore:
             secret_values=secret_values,
             clock=clock,
             claim_lease_seconds=claim_lease_seconds,
+            run_lease_seconds=run_lease_seconds,
         )
 
     def create_schema(self) -> None:
@@ -202,6 +214,74 @@ class SQLiteRunStore:
                 .limit(limit)
             )
             return [Run.model_validate_json(row.payload) for row in rows]
+
+    def claim_run_execution(self, run_id: UUID, *, owner_token: str) -> Run:
+        """CAS-acquire or renew a bounded execution lease for one durable run."""
+        if not owner_token:
+            raise ValueError("owner_token is required")
+        now = self._aware_now()
+        lease_expires_at = now + timedelta(seconds=self._run_lease_seconds)
+        with self._session.begin() as session:
+            row = session.get(RunRow, str(run_id))
+            if row is None:
+                raise LookupError(f"run not found: {run_id}")
+            run = Run.model_validate_json(row.payload)
+            if (
+                run.execution_owner is not None
+                and run.execution_owner != owner_token
+                and run.execution_lease_expires_at is not None
+                and run.execution_lease_expires_at > now
+            ):
+                raise RunExecutionConflictError("run has a live owner")
+            claimed = run.model_copy(
+                update={
+                    "execution_owner": owner_token,
+                    "execution_lease_expires_at": lease_expires_at,
+                    "updated_at": now,
+                    "version": run.version + 1,
+                }
+            )
+            changed = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(RunRow)
+                    .where(RunRow.id == str(run_id), RunRow.version == run.version)
+                    .values(version=claimed.version, payload=_dump(claimed))
+                ),
+            )
+            if changed.rowcount != 1:
+                raise ConcurrentUpdateError("stale run execution claim")
+            return claimed
+
+    def release_run_execution(self, run_id: UUID, *, owner_token: str) -> Run:
+        """CAS-release only the execution lease owned by this worker."""
+        now = self._aware_now()
+        with self._session.begin() as session:
+            row = session.get(RunRow, str(run_id))
+            if row is None:
+                raise LookupError(f"run not found: {run_id}")
+            run = Run.model_validate_json(row.payload)
+            if run.execution_owner != owner_token:
+                raise RunExecutionConflictError("run execution is not owned by worker")
+            released = run.model_copy(
+                update={
+                    "execution_owner": None,
+                    "execution_lease_expires_at": None,
+                    "updated_at": now,
+                    "version": run.version + 1,
+                }
+            )
+            changed = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(RunRow)
+                    .where(RunRow.id == str(run_id), RunRow.version == run.version)
+                    .values(version=released.version, payload=_dump(released))
+                ),
+            )
+            if changed.rowcount != 1:
+                raise ConcurrentUpdateError("stale run execution release")
+            return released
 
     def append_event(self, event_value: TraceEvent) -> TraceEvent:
         """Allocate a unique trace sequence and persist a sanitized event."""
@@ -287,9 +367,7 @@ class SQLiteRunStore:
         """Atomically acquire matching retryable work, never a different request."""
         if not request_fingerprint:
             raise ValueError("request_fingerprint is required")
-        now = self._clock()
-        if now.tzinfo is None:
-            raise ValueError("claim clock must return a timezone-aware datetime")
+        now = self._aware_now()
         lease_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
         with self._session.begin() as session:
             result = cast(
@@ -518,9 +596,22 @@ class SQLiteRunStore:
         return claim.result if claim.state is ToolClaimState.COMPLETED else None
 
     def record_approval(
-        self, run_id: UUID, *, actor: str, allow: bool, reason: str | None = None
-    ) -> None:
-        """Persist one immutable approval decision for a run."""
+        self,
+        run_id: UUID,
+        *,
+        actor: str,
+        allow: bool,
+        action_step: int,
+        action_fingerprint: str,
+        reason: str | None = None,
+    ) -> dict[str, object]:
+        """Insert one action-bound decision, accepting only exact retries."""
+        if action_step < 0:
+            raise ValueError("approval action_step must not be negative")
+        if len(action_fingerprint) != 64 or any(
+            character not in "0123456789abcdef" for character in action_fingerprint
+        ):
+            raise ValueError("approval action fingerprint must be canonical SHA-256")
         with self._session.begin() as session:
             result = cast(
                 CursorResult[Any],
@@ -528,29 +619,55 @@ class SQLiteRunStore:
                     insert(ApprovalRow)
                     .values(
                         run_id=str(run_id),
+                        action_step=action_step,
+                        action_fingerprint=action_fingerprint,
                         actor=actor,
                         allow=allow,
                         reason=reason,
-                        recorded_at=datetime.now(UTC).isoformat(),
+                        recorded_at=self._aware_now().isoformat(),
                     )
                     .on_conflict_do_nothing()
                 ),
             )
-            if result.rowcount != 1:
-                raise ValueError("approval decision is already recorded")
+            row = session.get(ApprovalRow, (str(run_id), action_step))
+            if row is None:
+                raise RuntimeError("approval insert was not visible")
+            if result.rowcount != 1 and (
+                row.actor != actor
+                or row.allow is not allow
+                or row.action_fingerprint != action_fingerprint
+            ):
+                raise ValueError("approval decision conflict")
+            return _approval(row)
 
-    def get_approval(self, run_id: UUID) -> dict[str, object] | None:
+    def get_approval(
+        self,
+        run_id: UUID,
+        *,
+        action_step: int = 0,
+        action_fingerprint: str | None = None,
+    ) -> dict[str, object] | None:
         with self._session() as session:
-            row = session.get(ApprovalRow, str(run_id))
+            row = session.get(ApprovalRow, (str(run_id), action_step))
             if row is None:
                 return None
-            return {
-                "actor": row.actor,
-                "allow": row.allow,
-                "decision": "approved" if row.allow else "denied",
-                "reason": row.reason,
-                "recorded_at": row.recorded_at,
-            }
+            if (
+                action_fingerprint is not None
+                and row.action_fingerprint != action_fingerprint
+            ):
+                return None
+            return _approval(row)
+
+    def get_latest_approval(self, run_id: UUID) -> dict[str, object] | None:
+        """Return the latest immutable decision for idempotent API retries."""
+        with self._session() as session:
+            row = session.scalar(
+                select(ApprovalRow)
+                .where(ApprovalRow.run_id == str(run_id))
+                .order_by(ApprovalRow.action_step.desc())
+                .limit(1)
+            )
+            return _approval(row) if row is not None else None
 
     def save_evaluation(
         self, run_id: UUID, evaluation_name: str, result: JsonValue
@@ -568,6 +685,12 @@ class SQLiteRunStore:
         with self._session() as session:
             row = session.get(EvaluationRow, (str(run_id), evaluation_name))
             return _load(row.payload) if row is not None else None
+
+    def _aware_now(self) -> datetime:
+        now = self._clock()
+        if now.tzinfo is None:
+            raise ValueError("claim clock must return a timezone-aware datetime")
+        return now
 
 
 def _configure_sqlite_connection(connection: Any, _: Any) -> None:
@@ -606,6 +729,18 @@ def _tool_claim(row: ToolResultRow | None) -> ToolClaim:
         if row.lease_expires_at is not None
         else None,
     )
+
+
+def _approval(row: ApprovalRow) -> dict[str, object]:
+    return {
+        "actor": row.actor,
+        "allow": row.allow,
+        "decision": "approved" if row.allow else "denied",
+        "reason": row.reason,
+        "recorded_at": row.recorded_at,
+        "action_step": row.action_step,
+        "action_fingerprint": row.action_fingerprint,
+    }
 
 
 def _dump(value: Any) -> str:

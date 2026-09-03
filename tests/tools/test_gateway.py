@@ -23,7 +23,11 @@ from agent_reliability_lab.tools.faults import (
     no_faults,
     timeout_on_attempt,
 )
-from agent_reliability_lab.tools.gateway import PermanentToolError, ToolGateway
+from agent_reliability_lab.tools.gateway import (
+    PermanentToolError,
+    ToolGateway,
+    action_fingerprint,
+)
 from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
 
 
@@ -46,6 +50,20 @@ def _gateway(tmp_path: Path, *, sleeper: Any | None = None) -> tuple[ToolGateway
             incident_backend=backend,
         ),
         run,
+    )
+
+
+def _approve(
+    gateway: ToolGateway, run: Run, action: CallToolAction, *, allow: bool = True
+) -> None:
+    stable = gateway.stabilize_action(run, action)
+    gateway.store.record_approval(
+        run.id,
+        actor="reviewer",
+        allow=allow,
+        action_step=run.current_step,
+        action_fingerprint=action_fingerprint(stable),
+        reason="ok",
     )
 
 
@@ -78,10 +96,10 @@ def test_gateway_retries_a_transient_timeout_and_records_attempts(
 def test_duplicate_idempotency_key_returns_cached_write_once(tmp_path: Path) -> None:
     """Dropping durable claim/cache protection around a write must fail."""
     gateway, run = _gateway(tmp_path)
-    gateway.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
     action = _call(
         "prepare_rollback", key="rollback-42", deployment_id="deploy-2026-09-04-001"
     )
+    _approve(gateway, run, action)
 
     first = gateway.call_sync(run, action, no_faults())
     second = gateway.call_sync(run, action, no_faults())
@@ -205,18 +223,18 @@ def test_call_is_async_and_enforces_handler_timeout(tmp_path: Path) -> None:
     assert result.attempts == 1
 
 
-def test_high_risk_write_rejects_a_missing_idempotency_key(tmp_path: Path) -> None:
-    """A write without a durable key can run twice and must be rejected first."""
+def test_high_risk_write_derives_a_stable_idempotency_key(tmp_path: Path) -> None:
+    """A provider-style write without a key must still execute at most once."""
     gateway, run = _gateway(tmp_path)
-    gateway.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
+    action = _call("prepare_rollback", deployment_id="deploy-2026-09-04-001")
+    _approve(gateway, run, action)
 
-    result = gateway.call_sync(
-        run, _call("prepare_rollback", deployment_id="deploy-2026-09-04-001")
-    )
+    first = gateway.call_sync(run, action)
+    second = gateway.call_sync(run, action)
 
-    assert result.error_code == "idempotency_key_required"
-    assert gateway.incident_backend.rollback_preparations == 0
-    assert gateway.events == []
+    assert first.status == "succeeded"
+    assert second.cached is True
+    assert gateway.incident_backend.rollback_preparations == 1
 
 
 def test_write_and_high_risk_definitions_must_declare_idempotency() -> None:
@@ -385,16 +403,14 @@ def test_cancelled_read_claim_is_released_and_can_recover(tmp_path: Path) -> Non
 def test_idempotency_key_conflicts_on_changed_tool_or_arguments(tmp_path: Path) -> None:
     """One key must never return a cache entry for a different request."""
     gateway, run = _gateway(tmp_path)
-    gateway.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
-
-    first = gateway.call_sync(
-        run,
-        _call(
-            "prepare_rollback",
-            key="bound",
-            deployment_id="deploy-2026-09-04-001",
-        ),
+    approved = _call(
+        "prepare_rollback",
+        key="bound",
+        deployment_id="deploy-2026-09-04-001",
     )
+    _approve(gateway, run, approved)
+
+    first = gateway.call_sync(run, approved)
     tool_mismatch = gateway.call_sync(run, _call("get_service_health", key="bound"))
     args_mismatch = gateway.call_sync(
         run,
@@ -407,7 +423,7 @@ def test_idempotency_key_conflicts_on_changed_tool_or_arguments(tmp_path: Path) 
 
     assert first.status == "succeeded"
     assert tool_mismatch.error_code == "idempotency_conflict"
-    assert args_mismatch.error_code == "idempotency_conflict"
+    assert args_mismatch.error_code == "approval_mismatch"
 
 
 def test_attempt_events_share_span_parent_and_terminal_status(tmp_path: Path) -> None:

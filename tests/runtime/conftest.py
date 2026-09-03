@@ -9,6 +9,7 @@ import pytest
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.actions import CallToolAction, FinishAction
 from agent_reliability_lab.domain.scenarios import Scenario
+from agent_reliability_lab.runtime.policies import Policy
 from agent_reliability_lab.runtime.service import RunService
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
@@ -24,6 +25,8 @@ class AppContext:
     runs: RunService
     backend: IncidentBackend
     scenarios: dict[str, Scenario]
+    gateway: ToolGateway
+    recorder: TraceRecorder
 
     def reconstruct(self) -> "AppContext":
         return build_context(self.database_path)
@@ -48,7 +51,9 @@ def rollback_scenario() -> Scenario:
     )
 
 
-def build_context(database_path: Path) -> AppContext:
+def build_context(
+    database_path: Path, *, policies: dict[str, Policy] | None = None
+) -> AppContext:
     settings = Settings(data_dir=database_path.parent, database_path=database_path)
     store = SQLiteRunStore.from_settings(settings)
     store.create_schema()
@@ -64,9 +69,11 @@ def build_context(database_path: Path) -> AppContext:
     loader: Callable[[str], Scenario] = scenarios.__getitem__
     return AppContext(
         database_path=database_path,
-        runs=RunService(store, recorder, gateway, loader),
+        runs=RunService(store, recorder, gateway, loader, policies=policies),
         backend=backend,
         scenarios=scenarios,
+        gateway=gateway,
+        recorder=recorder,
     )
 
 

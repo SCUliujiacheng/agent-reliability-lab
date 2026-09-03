@@ -18,13 +18,16 @@ async def test_resume_rejects_terminal_and_currently_running_runs(
     with pytest.raises(RunConflictError, match="terminal"):
         await app_context.runs.resume(completed.id)
 
-    stored = app_context.runs.store.save_run(
-        app_context.runs.store.save_run(
-            app_context.runs.new_run("rollback-approval", "resilient")
-        ).transition(RunStatus.RUNNING),
-        expected_version=1,
+    queued = app_context.runs.store.save_run(
+        app_context.runs.new_run("rollback-approval", "resilient")
     )
-    with pytest.raises(RunConflictError, match="running"):
+    owned = app_context.runs.store.claim_run_execution(
+        queued.id, owner_token="active-worker"
+    )
+    stored = app_context.runs.store.save_run(
+        owned.transition(RunStatus.RUNNING), expected_version=owned.version
+    )
+    with pytest.raises(RunConflictError, match="live owner"):
         await app_context.runs.resume(stored.id)
 
 

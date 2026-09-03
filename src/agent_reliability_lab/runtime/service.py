@@ -1,14 +1,17 @@
 """Application service for starting, approving, and resuming durable runs."""
 
 from collections.abc import Callable, Mapping
-from typing import Literal
-from uuid import UUID
+from typing import Literal, cast
+from uuid import UUID, uuid4
 
 from agent_reliability_lab.domain.runs import Run, RunStatus
 from agent_reliability_lab.domain.scenarios import Scenario
 from agent_reliability_lab.runtime.orchestrator import DurableOrchestrator
 from agent_reliability_lab.runtime.policies import Policy, ScriptedPolicy
-from agent_reliability_lab.storage.store import SQLiteRunStore
+from agent_reliability_lab.storage.store import (
+    RunExecutionConflictError,
+    SQLiteRunStore,
+)
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
 from agent_reliability_lab.tools.gateway import ToolGateway
 
@@ -45,7 +48,6 @@ class RunService:
 
     @property
     def policy(self) -> Policy:
-        """Expose the default policy for runtime composition inspection."""
         return self._policies["scripted"]
 
     def load_scenario(self, scenario_id: str) -> Scenario:
@@ -73,18 +75,22 @@ class RunService:
             }
         )
         canonical = self.store.save_run(run)
-        return await self._orchestrator(policy).execute(canonical, scenario)
+        return await self._execute_owned(canonical, scenario, policy)
 
     async def resume(self, run_id: UUID) -> Run:
         run = self._required(run_id)
         if run.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
+            self._rejected(run, "run.resume.rejected", "terminal")
             raise RunConflictError("terminal runs cannot be resumed")
-        if run.status is RunStatus.RUNNING:
-            raise RunConflictError("currently running runs cannot be resumed")
         scenario = self.load_scenario(run.scenario_id)
-        return await self._orchestrator(self._policy(run.policy_name)).execute(
-            run, scenario
-        )
+        try:
+            return await self._execute_owned(
+                run, scenario, self._policy(run.policy_name)
+            )
+        except RunExecutionConflictError as error:
+            current = self._required(run_id)
+            self._rejected(current, "run.resume.rejected", "live_owner")
+            raise RunConflictError("run has a live owner") from error
 
     async def approve(
         self,
@@ -95,34 +101,90 @@ class RunService:
         reason: str | None = None,
     ) -> Run:
         run = self._required(run_id)
-        if self.store.get_approval(run_id) is not None:
-            self.store.record_approval(run_id, actor=actor, allow=allow, reason=reason)
-        if run.status is not RunStatus.WAITING_APPROVAL:
+        latest = self.store.get_latest_approval(run_id)
+        if run.pending_action_fingerprint is not None:
+            action_step = run.current_step
+            fingerprint = run.pending_action_fingerprint
+        elif latest is not None:
+            action_step = cast(int, latest["action_step"])
+            fingerprint = cast(str, latest["action_fingerprint"])
+        else:
+            self._rejected(run, "approval.rejected", "not_waiting")
             raise RunConflictError("run is not waiting for approval")
-        self.store.record_approval(run_id, actor=actor, allow=allow, reason=reason)
-        if allow:
-            return await self.resume(run_id)
-        terminal = run.transition(RunStatus.FAILED).model_copy(
-            update={
-                "pending_approval": False,
-                "result": {"code": "approval_denied", "reason": reason},
-            }
-        )
-        saved = self.store.save_run(terminal, expected_version=run.version)
+
+        try:
+            decision = self.store.record_approval(
+                run_id,
+                actor=actor,
+                allow=allow,
+                action_step=action_step,
+                action_fingerprint=fingerprint,
+                reason=reason,
+            )
+        except ValueError:
+            self._rejected(run, "approval.rejected", "decision_conflict")
+            raise
         self._recorder.record(
-            saved.trace_id,
-            "approval.denied",
-            {"actor": actor, "reason": reason},
-            parent_span_id=saved.trace_id,
-            status="error",
+            run.trace_id,
+            "approval.recorded",
+            {
+                "actor": actor,
+                "allow": allow,
+                "action_step": action_step,
+                "action_fingerprint": fingerprint,
+            },
+            parent_span_id=run.trace_id,
         )
-        return saved
+
+        if run.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
+            return run
+        if run.status not in {RunStatus.WAITING_APPROVAL, RunStatus.RUNNING}:
+            self._rejected(run, "approval.rejected", "not_waiting")
+            raise RunConflictError("run is not waiting for approval")
+        if decision["allow"] is not True:
+            return self._deny(run, actor=actor, reason=reason)
+        return await self.resume(run_id)
 
     def get(self, run_id: UUID) -> Run:
         return self._required(run_id)
 
     def list(self, *, limit: int = 100) -> list[Run]:
         return self.store.list_runs(limit=limit)
+
+    async def _execute_owned(self, run: Run, scenario: Scenario, policy: Policy) -> Run:
+        owner_token = uuid4().hex
+        claimed = self.store.claim_run_execution(run.id, owner_token=owner_token)
+        try:
+            await DurableOrchestrator(
+                self.store, self._recorder, self._gateway, policy
+            ).execute(claimed, scenario, owner_token=owner_token)
+        finally:
+            released = self.store.release_run_execution(run.id, owner_token=owner_token)
+        return released
+
+    def _deny(self, run: Run, *, actor: str, reason: str | None) -> Run:
+        owner_token = uuid4().hex
+        owned = self.store.claim_run_execution(run.id, owner_token=owner_token)
+        if owned.status is RunStatus.WAITING_APPROVAL:
+            owned = self.store.save_run(
+                owned.transition(RunStatus.FAILED).model_copy(
+                    update={
+                        "pending_approval": False,
+                        "pending_action": None,
+                        "pending_action_fingerprint": None,
+                        "result": {"code": "approval_denied", "reason": reason},
+                    }
+                ),
+                expected_version=owned.version,
+            )
+        self._recorder.record(
+            owned.trace_id,
+            "approval.denied",
+            {"actor": actor, "reason": reason},
+            parent_span_id=owned.trace_id,
+            status="error",
+        )
+        return self.store.release_run_execution(run.id, owner_token=owner_token)
 
     def _required(self, run_id: UUID) -> Run:
         run = self.store.get_run(run_id)
@@ -136,8 +198,14 @@ class RunService:
         except KeyError as error:
             raise ValueError(f"unknown policy: {name}") from error
 
-    def _orchestrator(self, policy: Policy) -> DurableOrchestrator:
-        return DurableOrchestrator(self.store, self._recorder, self._gateway, policy)
+    def _rejected(self, run: Run, event_type: str, reason: str) -> None:
+        self._recorder.record(
+            run.trace_id,
+            event_type,
+            {"reason": reason, "status": run.status},
+            parent_span_id=run.trace_id,
+            status="error",
+        )
 
 
 __all__ = ["RunConflictError", "RunNotFoundError", "RunService"]

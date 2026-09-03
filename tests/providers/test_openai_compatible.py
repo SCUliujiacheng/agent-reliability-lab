@@ -13,6 +13,7 @@ from agent_reliability_lab.domain.scenarios import Scenario
 from agent_reliability_lab.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatiblePolicy,
+    ProviderError,
     ProviderProtocolError,
     ProviderTimeoutError,
 )
@@ -53,7 +54,7 @@ def full_response(message: dict[str, object]) -> dict[str, object]:
             {
                 "index": 0,
                 "message": {"role": "assistant", **message},
-                "finish_reason": "stop",
+                "finish_reason": "tool_calls" if message.get("tool_calls") else "stop",
             }
         ],
         "usage": {
@@ -123,6 +124,26 @@ async def test_provider_parses_complete_response_into_discriminated_action(
             },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_provider_accepts_known_optional_chat_completion_fields() -> None:
+    response = full_response(
+        {"content": '{"type":"finish","summary":"done","outcome":"done"}'}
+    )
+    response["system_fingerprint"] = None
+    response["service_tier"] = "default"
+    response["choices"][0]["logprobs"] = None
+    response["choices"][0]["message"]["refusal"] = None
+    response["usage"]["prompt_tokens_details"] = {"cached_tokens": 0}
+    response["usage"]["completion_tokens_details"] = {"reasoning_tokens": 0}
+
+    async with httpx.AsyncClient(transport=json_transport(response)) as client:
+        action = await OpenAICompatiblePolicy(config(), client=client).next_action(
+            Run.new("scenario", "resilient"), scenario()
+        )
+
+    assert action.outcome == "done"
 
 
 @pytest.mark.asyncio
@@ -202,3 +223,138 @@ async def test_provider_traces_redact_credentials_and_secret_content(
     )
     assert "top-secret" not in serialized
     assert "[REDACTED]" in serialized
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: {**value, "unexpected": True},
+        lambda value: {**value, "choices": value["choices"] * 2},
+        lambda value: {
+            **value,
+            "choices": [
+                {
+                    **value["choices"][0],
+                    "message": {
+                        **value["choices"][0]["message"],
+                        "role": "user",
+                    },
+                }
+            ],
+        },
+        lambda value: {
+            **value,
+            "choices": [
+                {
+                    **value["choices"][0],
+                    "message": {
+                        "role": "assistant",
+                        "content": '{"type":"finish","summary":"x","outcome":"x"}',
+                        "tool_calls": [
+                            {
+                                "id": "call",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_deployment",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+        lambda value: {
+            **value,
+            "choices": [
+                {
+                    **value["choices"][0],
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call",
+                                "type": "not_function",
+                                "function": {
+                                    "name": "get_deployment",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+        lambda value: {
+            **value,
+            "choices": [{**value["choices"][0], "finish_reason": "tool_calls"}],
+        },
+    ],
+)
+async def test_provider_rejects_malformed_response_envelopes(mutate: object) -> None:
+    """Permissive envelope parsing must not accept ambiguous provider output."""
+    base = full_response({"content": '{"type":"finish","summary":"x","outcome":"x"}'})
+    payload = mutate(base)
+    async with httpx.AsyncClient(transport=json_transport(payload)) as client:
+        with pytest.raises(ProviderProtocolError):
+            await OpenAICompatiblePolicy(config(), client=client).next_action(
+                Run.new("scenario", "resilient"), scenario()
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected_error_name", "expected_code"),
+    [
+        ("transport", "ProviderTransportError", "provider_transport"),
+        ("status", "ProviderHTTPStatusError", "provider_http_status"),
+        ("protocol", "ProviderProtocolError", "provider_protocol"),
+    ],
+)
+async def test_provider_failure_categories_are_traced_and_redacted(
+    tmp_path: Path,
+    kind: str,
+    expected_error_name: str,
+    expected_code: str,
+) -> None:
+    """Collapsing failures or persisting their secrets would defeat diagnosis."""
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / f"{kind}.db"),
+        secret_values={"failure-secret"},
+    )
+    store.create_schema()
+    run = store.save_run(Run.new("scenario", "resilient"))
+    if kind == "transport":
+        transport = httpx.MockTransport(
+            lambda request: (_ for _ in ()).throw(
+                httpx.ConnectError("failure-secret", request=request)
+            )
+        )
+    elif kind == "status":
+        transport = json_transport(
+            {"error": {"message": "failure-secret"}}, status_code=503
+        )
+    else:
+        transport = json_transport(full_response({"content": "failure-secret"}))
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        policy = OpenAICompatiblePolicy(
+            config(),
+            client=client,
+            recorder=TraceRecorder(store, {"failure-secret"}),
+        )
+        with pytest.raises(ProviderError) as caught:
+            await policy.next_action(run, scenario())
+
+    assert type(caught.value).__name__ == expected_error_name
+
+    failed = [
+        event
+        for event in store.list_events(run.trace_id)
+        if event.event_type == "provider.failed"
+    ]
+    assert len(failed) == 1
+    assert failed[0].payload["code"] == expected_code
+    assert "failure-secret" not in json.dumps(failed[0].payload)

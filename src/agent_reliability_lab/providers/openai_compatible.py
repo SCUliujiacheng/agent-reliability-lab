@@ -3,10 +3,18 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol
 
 import httpx
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 
 from agent_reliability_lab.domain.actions import AgentAction, CallToolAction
 from agent_reliability_lab.domain.runs import Run
@@ -28,10 +36,85 @@ class ProviderTimeoutError(ProviderError):
     """Raised when the configured provider deadline expires."""
 
 
+class ProviderTransportError(ProviderError):
+    """Raised when no HTTP response can be obtained."""
+
+
+class ProviderHTTPStatusError(ProviderError):
+    """Raised when the provider returns a non-success HTTP status."""
+
+
 class AsyncPostClient(Protocol):
     async def post(self, *args: object, **kwargs: object) -> Any:
         """Send one HTTP request."""
         ...
+
+
+class _Function(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=128)
+    arguments: str
+
+
+class _ToolCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    type: Literal["function"]
+    function: _Function
+
+
+class _Message(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["assistant"]
+    content: str | None = None
+    refusal: str | None = None
+    tool_calls: tuple[_ToolCall, ...] | None = Field(
+        default=None, min_length=1, max_length=1
+    )
+
+    @model_validator(mode="after")
+    def exactly_one_action_shape(self) -> "_Message":
+        has_content = self.content is not None
+        has_call = self.tool_calls is not None
+        if has_content == has_call:
+            raise ValueError("exactly one of content or one function call is required")
+        return self
+
+
+class _Choice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    index: int = Field(ge=0)
+    message: _Message
+    finish_reason: Literal["stop", "tool_calls"]
+    logprobs: JsonValue | None = None
+
+    @model_validator(mode="after")
+    def finish_reason_matches_message(self) -> "_Choice":
+        expected = "tool_calls" if self.message.tool_calls is not None else "stop"
+        if self.finish_reason != expected:
+            raise ValueError("finish_reason does not match message action shape")
+        return self
+
+
+class _Usage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    prompt_tokens_details: JsonValue | None = None
+    completion_tokens_details: JsonValue | None = None
+
+
+class _CompletionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    object: Literal["chat.completion"]
+    created: int = Field(ge=0)
+    model: str = Field(min_length=1)
+    choices: tuple[_Choice, ...] = Field(min_length=1, max_length=1)
+    usage: _Usage
+    system_fingerprint: str | None = None
+    service_tier: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,25 +178,42 @@ class OpenAICompatiblePolicy:
                         self._url, json=body, headers=headers, timeout=timeout
                     )
         except httpx.TimeoutException as error:
-            self._record(
-                run,
-                "provider.failed",
-                {"code": "provider_timeout"},
-                status="error",
-            )
+            self._failed(run, "provider_timeout", {"error": str(error)})
             raise ProviderTimeoutError("provider request timed out") from error
-        except httpx.HTTPError as error:
-            raise ProviderError("provider request failed") from error
+        except httpx.RequestError as error:
+            self._failed(run, "provider_transport", {"error": str(error)})
+            raise ProviderTransportError("provider transport failed") from error
 
         try:
             response.raise_for_status()
-            payload = cast(JsonValue, response.json())
-        except (httpx.HTTPError, ValueError) as error:
-            raise ProviderProtocolError(
-                "provider returned an invalid response"
+        except httpx.HTTPStatusError as error:
+            self._failed(
+                run,
+                "provider_http_status",
+                {
+                    "status_code": response.status_code,
+                    "response": response.text,
+                },
+            )
+            raise ProviderHTTPStatusError(
+                f"provider returned HTTP {response.status_code}"
             ) from error
-        self._record(run, "provider.response", payload)
-        return self._parse_action(payload)
+
+        try:
+            raw_payload = response.json()
+            envelope = _CompletionResponse.model_validate(raw_payload)
+            action = self._parse_action(envelope)
+        except (ValueError, ValidationError, json.JSONDecodeError) as error:
+            self._failed(
+                run,
+                "provider_protocol",
+                {"response": response.text},
+            )
+            raise ProviderProtocolError(
+                "provider did not return one valid structured action"
+            ) from error
+        self._record(run, "provider.response", envelope.model_dump(mode="json"))
+        return action
 
     @property
     def _url(self) -> str:
@@ -150,43 +250,24 @@ class OpenAICompatiblePolicy:
             "tools": _scenario_tools(scenario),
         }
 
-    def _parse_action(self, payload: JsonValue) -> AgentAction:
+    def _parse_action(self, envelope: _CompletionResponse) -> AgentAction:
+        message = envelope.choices[0].message
         try:
-            choices = cast(dict[str, Any], payload)["choices"]
-            message = choices[0]["message"]
-            tool_calls = message.get("tool_calls")
-            if tool_calls:
-                if len(tool_calls) != 1:
-                    raise ProviderProtocolError(
-                        "provider must return exactly one structured action"
-                    )
-                function = tool_calls[0]["function"]
-                arguments = json.loads(function["arguments"])
+            if message.tool_calls is not None:
+                function = message.tool_calls[0].function
                 candidate: object = {
                     "type": "call_tool",
-                    "tool_name": function["name"],
-                    "arguments": arguments,
+                    "tool_name": function.name,
+                    "arguments": json.loads(function.arguments),
                 }
             else:
-                content = message.get("content")
-                if not isinstance(content, str):
-                    raise ProviderProtocolError(
-                        "provider did not return a structured action"
-                    )
-                candidate = json.loads(content)
+                candidate = json.loads(message.content or "")
             return _ACTION_ADAPTER.validate_python(candidate)
-        except ProviderProtocolError:
-            raise
-        except (
-            KeyError,
-            IndexError,
-            TypeError,
-            json.JSONDecodeError,
-            ValidationError,
-        ) as error:
-            raise ProviderProtocolError(
-                "provider did not return a valid structured action"
-            ) from error
+        except (TypeError, json.JSONDecodeError, ValidationError) as error:
+            raise ValueError("invalid structured action") from error
+
+    def _failed(self, run: Run, code: str, details: dict[str, JsonValue]) -> None:
+        self._record(run, "provider.failed", {"code": code, **details}, status="error")
 
     def _record(
         self,
@@ -207,7 +288,6 @@ class OpenAICompatiblePolicy:
 
 
 def _scenario_tools(scenario: Scenario) -> list[JsonValue]:
-    """Expose bounded function schemas for tools present in the frozen scenario."""
     tools: list[JsonValue] = []
     seen: set[str] = set()
     for action in scenario.actions:
@@ -256,6 +336,8 @@ __all__ = [
     "OpenAICompatibleConfig",
     "OpenAICompatiblePolicy",
     "ProviderError",
+    "ProviderHTTPStatusError",
     "ProviderProtocolError",
     "ProviderTimeoutError",
+    "ProviderTransportError",
 ]

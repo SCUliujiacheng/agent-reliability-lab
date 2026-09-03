@@ -6,13 +6,14 @@ from typing import cast
 
 from pydantic import JsonValue
 
-from agent_reliability_lab.domain.actions import FailAction, FinishAction
+from agent_reliability_lab.domain.actions import AgentAction, FailAction, FinishAction
 from agent_reliability_lab.domain.runs import Run, RunStatus
-from agent_reliability_lab.domain.scenarios import Scenario
+from agent_reliability_lab.domain.scenarios import FaultType, Scenario
 from agent_reliability_lab.runtime.policies import Policy
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
-from agent_reliability_lab.tools.gateway import ToolGateway
+from agent_reliability_lab.tools.faults import FaultKind, FaultPlan, FaultRule
+from agent_reliability_lab.tools.gateway import ToolGateway, action_fingerprint
 
 
 class DurableOrchestrator:
@@ -30,30 +31,52 @@ class DurableOrchestrator:
         self._gateway = gateway
         self._policy = policy
 
-    async def execute(self, run: Run, scenario: Scenario) -> Run:
-        """Advance a queued or approval-paused run to its next durable stop."""
+    async def execute(self, run: Run, scenario: Scenario, *, owner_token: str) -> Run:
+        """Advance an owned run to its next durable stop."""
         if run.status in {RunStatus.QUEUED, RunStatus.WAITING_APPROVAL}:
+            previous_status = run.status
             run = self._save(
                 run.transition(RunStatus.RUNNING).model_copy(
                     update={"pending_approval": False}
                 ),
                 previous=run,
             )
+            self._record(
+                run,
+                "run.running",
+                {"from_status": previous_status},
+            )
+        elif run.status is RunStatus.RUNNING:
+            self._record(
+                run,
+                "run.running",
+                {"from_status": "running"},
+            )
 
+        faults = _scenario_fault_plan(scenario)
         while run.status is RunStatus.RUNNING:
-            try:
-                action = await self._policy.next_action(run, scenario)
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:  # noqa: BLE001 - policy is an external boundary.
-                run = self._terminal_failure(run, "policy_error", type(error).__name__)
-                break
+            run = self._store.claim_run_execution(run.id, owner_token=owner_token)
+            action: AgentAction
+            if run.pending_action is not None:
+                action = run.pending_action
+            else:
+                try:
+                    action = await self._policy.next_action(run, scenario)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # noqa: BLE001
+                    run = self._terminal_failure(
+                        run, "policy_error", type(error).__name__
+                    )
+                    break
 
             self._record(run, "policy.action", action.model_dump(mode="json"))
             if isinstance(action, FinishAction):
                 terminal = run.transition(RunStatus.SUCCEEDED).model_copy(
                     update={
                         "current_step": run.current_step + 1,
+                        "pending_action": None,
+                        "pending_action_fingerprint": None,
                         "result": {
                             "outcome": action.outcome,
                             "summary": action.summary,
@@ -66,27 +89,52 @@ class DurableOrchestrator:
                 break
             if isinstance(action, FailAction):
                 run = self._terminal_failure(
-                    run,
-                    action.code,
-                    action.explanation,
-                    next_step=True,
+                    run, action.code, action.explanation, next_step=True
                 )
                 break
+
+            action = self._gateway.stabilize_action(run, action)
+            failure = self._gateway.preflight(
+                run, action, faults=faults, check_approval=False
+            )
+            if failure is not None:
+                run = self._terminal_failure(
+                    run, failure.error_code or "tool_preflight_failed"
+                )
+                break
+
+            fingerprint = action_fingerprint(action)
             if self._gateway.requires_approval(action):
-                approval = self._store.get_approval(run.id)
+                approval = self._store.get_approval(
+                    run.id, action_step=run.current_step
+                )
                 if approval is None:
                     paused = run.transition(RunStatus.WAITING_APPROVAL).model_copy(
-                        update={"pending_approval": True}
+                        update={
+                            "pending_approval": True,
+                            "pending_action": action,
+                            "pending_action_fingerprint": fingerprint,
+                        }
                     )
                     run = self._save(paused, previous=run)
                     self._record(
                         run,
                         "run.waiting_approval",
-                        {"tool_name": action.tool_name, "step": run.current_step},
+                        {
+                            "tool_name": action.tool_name,
+                            "step": run.current_step,
+                            "action_fingerprint": fingerprint,
+                        },
                     )
                     break
+                if approval["action_fingerprint"] != fingerprint:
+                    run = self._terminal_failure(run, "approval_mismatch")
+                    break
+                if approval["allow"] is not True:
+                    run = self._terminal_failure(run, "approval_denied")
+                    break
 
-            result = await self._gateway.call(run, action)
+            result = await self._gateway.call(run, action, faults)
             if result.status == "failed":
                 run = self._terminal_failure(
                     run, result.error_code or "tool_execution_failed"
@@ -101,6 +149,9 @@ class DurableOrchestrator:
                 update={
                     "current_step": run.current_step + 1,
                     "context": {**run.context, "tool_results": tool_results},
+                    "pending_approval": False,
+                    "pending_action": None,
+                    "pending_action_fingerprint": None,
                     "updated_at": datetime.now(UTC),
                 }
             )
@@ -127,6 +178,8 @@ class DurableOrchestrator:
             update={
                 "current_step": run.current_step + int(next_step),
                 "pending_approval": False,
+                "pending_action": None,
+                "pending_action_fingerprint": None,
                 "result": payload,
             }
         )
@@ -152,6 +205,25 @@ class DurableOrchestrator:
             parent_span_id=run.trace_id,
             status=status,
         )
+
+
+def _scenario_fault_plan(scenario: Scenario) -> FaultPlan:
+    kind_by_type = {
+        FaultType.TIMEOUT: FaultKind.TIMEOUT,
+        FaultType.RATE_LIMIT: FaultKind.RATE_LIMIT,
+        FaultType.TOOL_ERROR: FaultKind.TOOL_ERROR,
+        FaultType.MALFORMED_OUTPUT: FaultKind.MALFORMED_OUTPUT,
+    }
+    return FaultPlan(
+        tuple(
+            FaultRule(
+                tool_name=rule.tool_name,
+                attempt=rule.attempt,
+                kind=kind_by_type[rule.type],
+            )
+            for rule in scenario.faults
+        )
+    )
 
 
 __all__ = ["DurableOrchestrator"]
