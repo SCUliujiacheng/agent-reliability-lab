@@ -1,7 +1,8 @@
 """Transactional SQLite persistence for runs and audit records."""
 
 import json
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     event,
+    func,
     select,
     update,
 )
@@ -82,6 +84,7 @@ class ToolResultRow(Base):
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lease_expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class ApprovalRow(Base):
@@ -104,7 +107,12 @@ class SQLiteRunStore:
     """Synchronous SQLite store with transactional concurrency boundaries."""
 
     def __init__(
-        self, settings: Settings, *, secret_values: set[str] | None = None
+        self,
+        settings: Settings,
+        *,
+        secret_values: set[str] | None = None,
+        clock: Callable[[], datetime] | None = None,
+        claim_lease_seconds: float = 30.0,
     ) -> None:
         """Construct a store only from settings that confine its database path."""
         if not isinstance(settings, Settings):
@@ -113,14 +121,28 @@ class SQLiteRunStore:
         self._engine: Engine = create_engine(database_url)
         self._session = sessionmaker(self._engine)
         self._secret_values = secret_values or set()
+        if claim_lease_seconds <= 0:
+            raise ValueError("claim_lease_seconds must be positive")
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._claim_lease_seconds = claim_lease_seconds
         event.listen(self._engine, "connect", _configure_sqlite_connection)
 
     @classmethod
     def from_settings(
-        cls, settings: Settings, *, secret_values: set[str] | None = None
+        cls,
+        settings: Settings,
+        *,
+        secret_values: set[str] | None = None,
+        clock: Callable[[], datetime] | None = None,
+        claim_lease_seconds: float = 30.0,
     ) -> "SQLiteRunStore":
         """Construct a SQLite store from settings validated by the same boundary."""
-        return cls(settings, secret_values=secret_values)
+        return cls(
+            settings,
+            secret_values=secret_values,
+            clock=clock,
+            claim_lease_seconds=claim_lease_seconds,
+        )
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
@@ -165,6 +187,21 @@ class SQLiteRunStore:
         with self._session() as session:
             row = session.get(RunRow, str(run_id))
             return Run.model_validate_json(row.payload) if row is not None else None
+
+    def list_runs(self, *, limit: int = 100) -> list[Run]:
+        """Return recent canonical runs in deterministic newest-first order."""
+        if not 1 <= limit <= 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        with self._session() as session:
+            rows = session.scalars(
+                select(RunRow)
+                .order_by(
+                    func.json_extract(RunRow.payload, "$.created_at").desc(),
+                    RunRow.id.desc(),
+                )
+                .limit(limit)
+            )
+            return [Run.model_validate_json(row.payload) for row in rows]
 
     def append_event(self, event_value: TraceEvent) -> TraceEvent:
         """Allocate a unique trace sequence and persist a sanitized event."""
@@ -250,6 +287,10 @@ class SQLiteRunStore:
         """Atomically acquire matching retryable work, never a different request."""
         if not request_fingerprint:
             raise ValueError("request_fingerprint is required")
+        now = self._clock()
+        if now.tzinfo is None:
+            raise ValueError("claim clock must return a timezone-aware datetime")
+        lease_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
         with self._session.begin() as session:
             result = cast(
                 CursorResult[Any],
@@ -261,6 +302,7 @@ class SQLiteRunStore:
                         state="claimed",
                         owner_token=owner_token,
                         request_fingerprint=request_fingerprint,
+                        lease_expires_at=lease_expires_at.isoformat(),
                     )
                     .on_conflict_do_nothing()
                 ),
@@ -270,6 +312,7 @@ class SQLiteRunStore:
                     state=ToolClaimState.CLAIMED,
                     owner_token=owner_token,
                     request_fingerprint=request_fingerprint,
+                    lease_expires_at=lease_expires_at,
                 )
             row = session.get(ToolResultRow, (str(run_id), idempotency_key))
             if row is not None and row.request_fingerprint != request_fingerprint:
@@ -277,6 +320,61 @@ class SQLiteRunStore:
                     state=ToolClaimState.CONFLICT,
                     request_fingerprint=row.request_fingerprint,
                 )
+            if (
+                row is not None
+                and row.state == ToolClaimState.CLAIMED
+                and row.lease_expires_at is not None
+                and datetime.fromisoformat(row.lease_expires_at) <= now
+            ):
+                if allow_reclaim:
+                    reclaimed = cast(
+                        CursorResult[Any],
+                        session.execute(
+                            update(ToolResultRow)
+                            .where(
+                                ToolResultRow.run_id == str(run_id),
+                                ToolResultRow.idempotency_key == idempotency_key,
+                                ToolResultRow.state == ToolClaimState.CLAIMED,
+                                ToolResultRow.owner_token == row.owner_token,
+                                ToolResultRow.lease_expires_at == row.lease_expires_at,
+                            )
+                            .values(
+                                owner_token=owner_token,
+                                lease_expires_at=lease_expires_at.isoformat(),
+                            )
+                        ),
+                    )
+                    if reclaimed.rowcount == 1:
+                        return ToolClaim(
+                            state=ToolClaimState.CLAIMED,
+                            owner_token=owner_token,
+                            request_fingerprint=request_fingerprint,
+                            lease_expires_at=lease_expires_at,
+                        )
+                else:
+                    abandoned = cast(
+                        CursorResult[Any],
+                        session.execute(
+                            update(ToolResultRow)
+                            .where(
+                                ToolResultRow.run_id == str(run_id),
+                                ToolResultRow.idempotency_key == idempotency_key,
+                                ToolResultRow.state == ToolClaimState.CLAIMED,
+                                ToolResultRow.owner_token == row.owner_token,
+                                ToolResultRow.lease_expires_at == row.lease_expires_at,
+                            )
+                            .values(
+                                state=ToolClaimState.FAILED,
+                                error="abandoned execution requires manual review",
+                                failure_disposition=ToolFailureDisposition.INDETERMINATE,
+                            )
+                        ),
+                    )
+                    if abandoned.rowcount == 1:
+                        row.state = ToolClaimState.FAILED
+                        row.error = "abandoned execution requires manual review"
+                        row.failure_disposition = ToolFailureDisposition.INDETERMINATE
+                row = session.get(ToolResultRow, (str(run_id), idempotency_key))
             if (
                 row is not None
                 and row.state == ToolClaimState.FAILED
@@ -300,12 +398,16 @@ class SQLiteRunStore:
                             payload=None,
                             error=None,
                             failure_disposition=None,
+                            lease_expires_at=lease_expires_at.isoformat(),
                         )
                     ),
                 )
                 if reclaimed.rowcount == 1:
                     return ToolClaim(
-                        state=ToolClaimState.CLAIMED, owner_token=owner_token
+                        state=ToolClaimState.CLAIMED,
+                        owner_token=owner_token,
+                        request_fingerprint=request_fingerprint,
+                        lease_expires_at=lease_expires_at,
                     )
                 row = session.get(ToolResultRow, (str(run_id), idempotency_key))
             return _tool_claim(row)
@@ -499,6 +601,9 @@ def _tool_claim(row: ToolResultRow | None) -> ToolClaim:
         request_fingerprint=row.request_fingerprint,
         failure_disposition=ToolFailureDisposition(row.failure_disposition)
         if row.failure_disposition is not None
+        else None,
+        lease_expires_at=datetime.fromisoformat(row.lease_expires_at)
+        if row.lease_expires_at is not None
         else None,
     )
 

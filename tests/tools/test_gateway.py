@@ -524,3 +524,65 @@ def test_backoff_cancellation_keeps_one_terminal_event_per_attempt(
     assert len(retry_cancelled) == 1
     assert retry_cancelled[0].status == "error"
     assert retry_cancelled[0].span_id != terminal_events[0].span_id
+
+
+def test_cancelled_idempotent_write_reenters_with_stable_context_once(
+    tmp_path: Path,
+) -> None:
+    """Cancelling a replay-safe write must not force duplicate or manual recovery."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        value: str
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        answer: str
+
+    started = asyncio.Event()
+    results_by_token: dict[str, Output] = {}
+    side_effects = 0
+
+    async def replay_safe_write(value: Input, context: ToolExecutionContext) -> Output:
+        nonlocal side_effects
+        existing = results_by_token.get(context.idempotency_token)
+        if existing is not None:
+            return existing
+        side_effects += 1
+        result = Output(answer=value.value)
+        results_by_token[context.idempotency_token] = result
+        started.set()
+        await asyncio.Event().wait()
+        return result
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            "replay_safe_write",
+            Input,
+            Output,
+            replay_safe_write,
+            is_write=True,
+            idempotent=True,
+        )
+    )
+    settings = Settings(data_dir=tmp_path, database_path=tmp_path / "cancel-write.db")
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    run = store.save_run(Run.new("cancel-write", "resilient"))
+    gateway = ToolGateway(store, TraceRecorder(store), registry)
+    action = _call("replay_safe_write", key="stable-write", value="done")
+
+    async def cancel_then_resume() -> object:
+        task = asyncio.create_task(gateway.call(run, action))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return await gateway.call(run, action)
+
+    recovered = asyncio.run(cancel_then_resume())
+
+    assert recovered.status == "succeeded"
+    assert recovered.output == {"answer": "done"}
+    assert side_effects == 1

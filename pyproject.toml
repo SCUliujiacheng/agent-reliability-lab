@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A local-first platform for evaluating tool-using agent reliability."
 requires-python = ">=3.12"
 dependencies = [
+  "httpx>=0.28,<1",
   "pydantic>=2.10,<3",
   "PyYAML>=6.0,<7",
   "SQLAlchemy>=2.0,<3",
@@ -17,6 +18,7 @@ dependencies = [
 dev = [
   "mypy>=1.13,<2",
   "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<2",
   "ruff>=0.8,<1",
   "types-PyYAML>=6.0.12.20250915",
 ]

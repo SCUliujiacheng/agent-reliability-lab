@@ -81,3 +81,4 @@ class ToolClaim(BaseModel):
     error: str | None = None
     request_fingerprint: str | None = None
     failure_disposition: ToolFailureDisposition | None = None
+    lease_expires_at: datetime | None = None

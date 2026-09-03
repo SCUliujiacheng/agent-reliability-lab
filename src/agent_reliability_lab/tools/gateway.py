@@ -124,6 +124,7 @@ class ToolGateway:
                 action.idempotency_key,
                 owner_token=owner_token,
                 request_fingerprint=request_fingerprint,
+                allow_reclaim=not definition.is_write or definition.idempotent,
             )
             if claim.state is ToolClaimState.CONFLICT:
                 return ToolCallResult.failed("idempotency_conflict", attempts=0)
@@ -164,9 +165,9 @@ class ToolGateway:
                     owner_token=owner_token,
                     error="tool_execution_cancelled",
                     disposition=(
-                        ToolFailureDisposition.INDETERMINATE
-                        if definition.is_write
-                        else ToolFailureDisposition.RETRYABLE
+                        ToolFailureDisposition.RETRYABLE
+                        if not definition.is_write or definition.idempotent
+                        else ToolFailureDisposition.INDETERMINATE
                     ),
                 )
             raise
@@ -175,6 +176,17 @@ class ToolGateway:
                 run, action.idempotency_key, owner_token, result, definition
             )
         return result
+
+    def requires_approval(self, action: CallToolAction) -> bool:
+        """Report whether a registered, schema-valid action needs approval."""
+        definition = self._registry.get(action.tool_name)
+        if definition is None or not definition.requires_approval:
+            return False
+        try:
+            definition.input_model.model_validate(action.arguments)
+        except ValidationError:
+            return False
+        return True
 
     async def _attempts(
         self,

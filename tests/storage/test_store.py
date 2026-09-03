@@ -1,14 +1,20 @@
 """Behavioural tests for the durable SQLite run store."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from math import nan
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.runs import Run
-from agent_reliability_lab.storage.models import ToolClaimState, TraceEvent
+from agent_reliability_lab.storage.models import (
+    ToolClaimState,
+    ToolFailureDisposition,
+    TraceEvent,
+)
 from agent_reliability_lab.storage.store import (
     ConcurrentUpdateError,
     SQLiteRunStore,
@@ -338,3 +344,87 @@ def test_cached_tool_result_is_sanitized_before_it_reaches_sqlite(
         row = session.get(ToolResultRow, (str(run.id), "secret"))
     assert row is not None
     assert "s3cr3t" not in (row.payload or "")
+
+
+def test_expired_claim_is_reclaimed_with_injected_clock(tmp_path: Path) -> None:
+    """A process crash must not strand safe work behind a permanent claim."""
+    now = datetime(2026, 9, 4, tzinfo=UTC)
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / "lease.db"),
+        clock=lambda: now,
+        claim_lease_seconds=30,
+    )
+    store.create_schema()
+    run = store.save_run(Run.new("lease", "resilient"))
+    first = store.claim_tool_execution(
+        run.id, "key", owner_token="crashed", request_fingerprint="request"
+    )
+    assert first.lease_expires_at == now + timedelta(seconds=30)
+
+    now += timedelta(seconds=31)
+    reclaimed = store.claim_tool_execution(
+        run.id, "key", owner_token="recovery", request_fingerprint="request"
+    )
+
+    assert reclaimed.state is ToolClaimState.CLAIMED
+    assert reclaimed.owner_token == "recovery"
+    assert reclaimed.lease_expires_at == now + timedelta(seconds=30)
+
+
+def test_expired_unsafe_claim_becomes_indeterminate(tmp_path: Path) -> None:
+    """An abandoned write without replay safety must require human handling."""
+    now = datetime(2026, 9, 4, tzinfo=UTC)
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / "unsafe-lease.db"),
+        clock=lambda: now,
+        claim_lease_seconds=10,
+    )
+    store.create_schema()
+    run = store.save_run(Run.new("lease", "resilient"))
+    store.claim_tool_execution(
+        run.id, "key", owner_token="crashed", request_fingerprint="request"
+    )
+
+    now += timedelta(seconds=11)
+    claim = store.claim_tool_execution(
+        run.id,
+        "key",
+        owner_token="recovery",
+        request_fingerprint="request",
+        allow_reclaim=False,
+    )
+
+    assert claim.state is ToolClaimState.FAILED
+    assert claim.failure_disposition is ToolFailureDisposition.INDETERMINATE
+    assert claim.owner_token == "crashed"
+
+
+def test_list_runs_applies_limit_after_newest_first_ordering(tmp_path: Path) -> None:
+    """Limiting by random UUID order must not discard the newest durable run."""
+    store = store_at(tmp_path / "list.db")
+    store.create_schema()
+    base = datetime(2026, 9, 4, tzinfo=UTC)
+    oldest = Run.new("oldest", "resilient").model_copy(
+        update={"id": UUID(int=3), "created_at": base, "updated_at": base}
+    )
+    middle = Run.new("middle", "resilient").model_copy(
+        update={
+            "id": UUID(int=2),
+            "created_at": base + timedelta(seconds=1),
+            "updated_at": base + timedelta(seconds=1),
+        }
+    )
+    newest = Run.new("newest", "resilient").model_copy(
+        update={
+            "id": UUID(int=1),
+            "created_at": base + timedelta(seconds=2),
+            "updated_at": base + timedelta(seconds=2),
+        }
+    )
+    for run in (oldest, middle, newest):
+        store.save_run(run)
+
+    assert [run.scenario_id for run in store.list_runs(limit=2)] == [
+        "newest",
+        "middle",
+    ]
