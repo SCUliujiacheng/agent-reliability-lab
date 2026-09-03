@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from sqlalchemy import event as sqlalchemy_event
 
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.runs import Run
@@ -447,3 +448,37 @@ def test_list_runs_applies_limit_after_newest_first_ordering(tmp_path: Path) -> 
         "newest",
         "middle",
     ]
+
+
+def test_list_runs_loads_all_execution_leases_with_one_select(tmp_path: Path) -> None:
+    """A per-row lease lookup would make recent-run reads grow as N plus one."""
+    store = store_at(tmp_path / "list-query-count.db")
+    store.create_schema()
+    first = store.save_run(Run.new("first", "resilient"))
+    second = store.save_run(Run.new("second", "resilient"))
+    third = store.save_run(Run.new("third", "resilient"))
+    store.claim_run_execution(second.id, owner_token="worker-b")
+    selects: list[str] = []
+
+    def capture_select(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
+    sqlalchemy_event.listen(store._engine, "before_cursor_execute", capture_select)
+    try:
+        runs = store.list_runs(limit=3)
+    finally:
+        sqlalchemy_event.remove(store._engine, "before_cursor_execute", capture_select)
+
+    by_id = {run.id: run for run in runs}
+    assert len(selects) == 1
+    assert by_id[first.id].execution_owner is None
+    assert by_id[second.id].execution_owner == "worker-b"
+    assert by_id[third.id].execution_owner is None

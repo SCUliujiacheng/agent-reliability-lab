@@ -56,6 +56,61 @@ describe("TraceWaterfall", () => {
     expect(screen.queryByText("Infinityms")).not.toBeInTheDocument();
   });
 
+  it("does not call an isolated second-attempt success recovered", () => {
+    const isolatedSuccess = {
+      ...traceFixture[5],
+      id: "00000000-0000-0000-0000-000000000092",
+      sequence: 1,
+      payload: { tool_name: "search_recent_logs", attempt: 2, action_step: 7 },
+    };
+
+    render(<TraceWaterfall events={[isolatedSuccess]} />);
+
+    expect(screen.getByText("search_recent_logs · completed")).toBeVisible();
+    expect(screen.queryByText(/recovered/)).not.toBeInTheDocument();
+  });
+
+  it("derives bounded indentation from span lineage instead of action step", () => {
+    const rootSpan = "00000000-0000-0000-0000-000000000200";
+    const childSpan = "00000000-0000-0000-0000-000000000201";
+    const grandchildSpan = "00000000-0000-0000-0000-000000000202";
+    const root = {
+      ...traceFixture[0],
+      id: "00000000-0000-0000-0000-000000000093",
+      span_id: rootSpan,
+      payload: { from_status: "queued", action_step: 99 },
+    };
+    const child = {
+      ...traceFixture[1],
+      id: "00000000-0000-0000-0000-000000000094",
+      span_id: childSpan,
+      parent_span_id: rootSpan,
+      payload: { tool_name: "child", attempt: 1, action_step: 0 },
+    };
+    const grandchild = {
+      ...traceFixture[1],
+      id: "00000000-0000-0000-0000-000000000095",
+      span_id: grandchildSpan,
+      parent_span_id: childSpan,
+      payload: { tool_name: "grandchild", attempt: 1, action_step: 0 },
+    };
+    const unknownParent = {
+      ...traceFixture[1],
+      id: "00000000-0000-0000-0000-000000000096",
+      span_id: "00000000-0000-0000-0000-000000000203",
+      parent_span_id: "00000000-0000-0000-0000-000000000299",
+      payload: { tool_name: "orphan", attempt: 1, action_step: 99 },
+    };
+
+    render(<TraceWaterfall events={[root, child, grandchild, unknownParent]} />);
+
+    const rows = screen.getAllByTestId("trace-row");
+    expect(rows[0]).toHaveClass("trace-row--depth-0");
+    expect(rows[1]).toHaveClass("trace-row--depth-1");
+    expect(rows[2]).toHaveClass("trace-row--depth-2");
+    expect(rows[3]).toHaveClass("trace-row--depth-0");
+  });
+
   it("keeps all one hundred events visible with bounded indentation", () => {
     const events = Array.from({ length: 100 }, (_, index) => ({
       ...traceFixture[1],
@@ -71,5 +126,6 @@ describe("TraceWaterfall", () => {
 
     expect(screen.getAllByTestId("trace-row")).toHaveLength(100);
     expect(screen.getAllByTestId("trace-row")[99]).toHaveTextContent("tool_");
+    expect(screen.getAllByTestId("trace-row")[99]).toHaveClass("trace-row--depth-0");
   });
 });

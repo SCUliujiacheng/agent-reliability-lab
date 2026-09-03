@@ -9,17 +9,26 @@ export function useRunDetail(runId: string | null) {
   const [state, setState] = useState<LoadState>("ready");
   const [generation, setGeneration] = useState(0);
   const activeGeneration = useRef(0);
+  const activeRunId = useRef(runId);
 
-  const refresh = useCallback(() => {
+  useEffect(() => {
+    activeRunId.current = runId;
+  }, [runId]);
+
+  const refresh = useCallback((expectedRunId?: string) => {
+    if (expectedRunId !== undefined && activeRunId.current !== expectedRunId) return;
     setState("loading");
     setGeneration((value) => value + 1);
   }, []);
-  const replaceRun = useCallback((value: RunSummary) => setRun(value), []);
-  const reloadTrace = useCallback(async () => {
-    if (runId === null) return;
-    const page = await getTrace(runId);
+  const replaceRun = useCallback((value: RunSummary, expectedRunId: string) => {
+    if (activeRunId.current === expectedRunId && value.id === expectedRunId) setRun(value);
+  }, []);
+  const reloadTrace = useCallback(async (expectedRunId: string) => {
+    if (activeRunId.current !== expectedRunId) return;
+    const page = await getTrace(expectedRunId);
+    if (activeRunId.current !== expectedRunId) return;
     setEvents(page.events);
-  }, [runId]);
+  }, []);
 
   useEffect(() => {
     if (runId === null) {

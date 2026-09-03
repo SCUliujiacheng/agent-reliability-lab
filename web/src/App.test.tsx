@@ -311,6 +311,64 @@ describe("App workflows", () => {
     expect(screen.queryByRole("heading", { name: "run-a" })).not.toBeInTheDocument();
   });
 
+  it("ignores a deferred approval response after selection moves from A to B", async () => {
+    const runA = runFixture({
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      scenario_id: "approval-a",
+      status: "waiting_approval",
+      approval_required: true,
+      result: undefined,
+    });
+    const completedA = runFixture({
+      ...runA,
+      status: "succeeded",
+      approval_required: false,
+      result: { outcome: "prepared", evidence_refs: [] },
+    });
+    const runB = runFixture({
+      id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      scenario_id: "run-b",
+    });
+    const approval = deferred<Response>();
+    const base = overviewFetch({ runs: [runA, runB], evaluation: null });
+    let runATraceCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `/v1/runs/${runA.id}` && !init?.method) return response(runA);
+      if (url.startsWith(`/v1/runs/${runA.id}/trace`)) {
+        runATraceCalls += 1;
+        return response({ events: [], next_after_sequence: 0, has_more: false });
+      }
+      if (url === `/v1/runs/${runB.id}` && !init?.method) return response(runB);
+      if (url.startsWith(`/v1/runs/${runB.id}/trace`)) {
+        return response({ events: [], next_after_sequence: 0, has_more: false });
+      }
+      if (url === `/v1/runs/${runA.id}/approvals` && init?.method === "POST") {
+        return approval.promise;
+      }
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Open run approval-a/ }));
+    await user.click(await screen.findByRole("button", { name: "Allow action" }));
+    await user.click(screen.getByRole("button", { name: "Back to Runs" }));
+    await user.click(await screen.findByRole("button", { name: /Open run run-b/ }));
+    expect(await screen.findByRole("heading", { name: "run-b" })).toBeVisible();
+
+    await act(async () => {
+      approval.resolve(response(completedA));
+      await approval.promise;
+    });
+
+    expect(screen.getByRole("heading", { name: "run-b" })).toBeVisible();
+    expect(screen.queryByText("Loading run detail…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Action allowed")).not.toBeInTheDocument();
+    expect(runATraceCalls).toBe(1);
+  });
+
   it("renders useful empty/error states without per-run overview trace calls", async () => {
     const fetchMock = overviewFetch({ runs: [], evaluation: null });
     vi.stubGlobal("fetch", fetchMock);

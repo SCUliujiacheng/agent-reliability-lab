@@ -109,17 +109,30 @@ class ScenarioCatalog:
         return ScenarioListResponse(items=items)
 
 
+class _RunLockEntry:
+    def __init__(self) -> None:
+        self.lock = Lock()
+        self.users = 0
+
+
 class _RunLocks:
     def __init__(self) -> None:
         self._guard = Lock()
-        self._locks: dict[UUID, Lock] = {}
+        self._locks: dict[UUID, _RunLockEntry] = {}
 
     @contextmanager
     def hold(self, run_id: UUID) -> Iterator[None]:
         with self._guard:
-            lock = self._locks.setdefault(run_id, Lock())
-        with lock:
-            yield
+            entry = self._locks.setdefault(run_id, _RunLockEntry())
+            entry.users += 1
+        try:
+            with entry.lock:
+                yield
+        finally:
+            with self._guard:
+                entry.users -= 1
+                if entry.users == 0 and self._locks.get(run_id) is entry:
+                    del self._locks[run_id]
 
 
 class RunQueryService:

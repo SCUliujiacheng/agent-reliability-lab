@@ -299,20 +299,24 @@ class SQLiteRunStore:
         if not 1 <= limit <= 1_000:
             raise ValueError("limit must be between 1 and 1000")
         with self._session() as session:
-            rows = session.scalars(
-                select(RunRow)
+            rows = session.execute(
+                select(RunRow, RunExecutionLeaseRow)
+                .outerjoin(
+                    RunExecutionLeaseRow,
+                    RunExecutionLeaseRow.run_id == RunRow.id,
+                )
                 .order_by(
                     func.json_extract(RunRow.payload, "$.created_at").desc(),
                     RunRow.id.desc(),
                 )
                 .limit(limit)
-            )
+            ).tuples()
             return [
                 _with_execution_lease(
-                    Run.model_validate_json(row.payload),
-                    session.get(RunExecutionLeaseRow, row.id),
+                    Run.model_validate_json(run_row.payload),
+                    lease_row,
                 )
-                for row in rows
+                for run_row, lease_row in rows
             ]
 
     def claim_run_execution(self, run_id: UUID, *, owner_token: str) -> Run:

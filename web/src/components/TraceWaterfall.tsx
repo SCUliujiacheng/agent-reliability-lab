@@ -23,7 +23,7 @@ function humanize(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function present(event: TraceEvent): TracePresentation {
+function present(event: TraceEvent, recovered: boolean): TracePresentation {
   const tool = textValue(event.payload.tool_name, "Agent step");
   const attempt = numberValue(event.payload.attempt);
 
@@ -47,7 +47,7 @@ function present(event: TraceEvent): TracePresentation {
         tone: "danger",
       };
     case "tool.attempt.succeeded":
-      return attempt > 1
+      return recovered
         ? { title: `${tool} · recovered`, meta: `Attempt ${attempt} succeeded`, tone: "success" }
         : { title: `${tool} · completed`, meta: "Tool succeeded", tone: "success" };
     case "run.succeeded":
@@ -75,6 +75,60 @@ function present(event: TraceEvent): TracePresentation {
   }
 }
 
+function logicalAction(event: TraceEvent): string | null {
+  const tool = event.payload.tool_name;
+  const step = event.payload.action_step;
+  if (
+    typeof tool !== "string"
+    || tool.length === 0
+    || typeof step !== "number"
+    || !Number.isInteger(step)
+  ) return null;
+  return `${step}:${tool}`;
+}
+
+function recoveredEvents(events: TraceEvent[]): Set<string> {
+  const failedAttempts = new Map<string, number>();
+  const recovered = new Set<string>();
+  for (const event of events) {
+    const action = logicalAction(event);
+    const attempt = event.payload.attempt;
+    if (action === null || typeof attempt !== "number" || !Number.isInteger(attempt)) continue;
+    if (event.event_type === "tool.attempt.failed") {
+      failedAttempts.set(action, Math.max(failedAttempts.get(action) ?? 0, attempt));
+    } else if (event.event_type === "tool.attempt.succeeded") {
+      const failedAttempt = failedAttempts.get(action);
+      if (failedAttempt !== undefined && failedAttempt < attempt) recovered.add(event.id);
+    }
+  }
+  return recovered;
+}
+
+function spanDepths(events: TraceEvent[]): Map<string, number> {
+  const parents = new Map<string, string | null>();
+  for (const event of events) {
+    if (!parents.has(event.span_id)) parents.set(event.span_id, event.parent_span_id);
+  }
+
+  const depths = new Map<string, number>();
+  for (const event of events) {
+    let parent = event.parent_span_id;
+    let depth = 0;
+    const visited = new Set([event.span_id]);
+    while (parent !== null && parents.has(parent) && depth < 2) {
+      if (visited.has(parent)) {
+        depth = 0;
+        break;
+      }
+      visited.add(parent);
+      depth += 1;
+      parent = parents.get(parent) ?? null;
+    }
+    depths.set(event.span_id, depth);
+  }
+  return depths;
+}
+
 function formatDuration(durationMs: number | null | undefined): string {
   if (typeof durationMs !== "number" || !Number.isFinite(durationMs)) return "—";
   if (durationMs >= 1000) return `${(Math.round(durationMs / 100) / 10).toFixed(1)}s`;
@@ -99,11 +153,14 @@ export function TraceWaterfall({ events }: TraceWaterfallProps) {
     );
   }
 
+  const recovered = recoveredEvents(events);
+  const depths = spanDepths(events);
+
   return (
     <ol className="trace-list" aria-label="Execution trace">
       {events.map((event) => {
-        const presentation = present(event);
-        const depth = Math.min(Math.max(numberValue(event.payload.action_step, 0), 0), 2);
+        const presentation = present(event, recovered.has(event.id));
+        const depth = depths.get(event.span_id) ?? 0;
         return (
           <li
             className={`trace-row trace-row--${presentation.tone} trace-row--depth-${depth}`}

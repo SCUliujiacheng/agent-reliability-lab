@@ -16,8 +16,15 @@ function Dashboard() {
   const detail = useRunDetail(selectedRunId);
   const [mutationState, setMutationState] = useState<MutationState>("idle");
   const [notice, setNotice] = useState("");
-  const approvalInFlight = useRef(false);
+  const selectedRunIdRef = useRef<string | null>(null);
+  const selectionGeneration = useRef(0);
+  const approvalsInFlight = useRef(new Set<string>());
   const dismissNotice = useCallback(() => setNotice(""), []);
+  const selectRun = useCallback((runId: string | null) => {
+    selectedRunIdRef.current = runId;
+    selectionGeneration.current += 1;
+    setSelectedRunId(runId);
+  }, []);
 
   const startRun = async (scenarioId: string, mode: RunMode) => {
     if (mutationState === "pending") return;
@@ -25,7 +32,7 @@ function Dashboard() {
     setNotice("");
     try {
       const run = await createRun(scenarioId, mode);
-      setSelectedRunId(run.id);
+      selectRun(run.id);
       setMutationState("success");
     } catch {
       setMutationState("error");
@@ -34,30 +41,40 @@ function Dashboard() {
   };
 
   const approve = async (allow: boolean) => {
-    if (selectedRunId === null || approvalInFlight.current) return;
-    approvalInFlight.current = true;
+    if (selectedRunId === null) return;
+    const approvalRunId = selectedRunId;
+    const approvalGeneration = selectionGeneration.current;
+    const approvalKey = `${approvalRunId}:${approvalGeneration}`;
+    if (approvalsInFlight.current.has(approvalKey)) return;
+    approvalsInFlight.current.add(approvalKey);
+    const isCurrentSelection = () =>
+      selectedRunIdRef.current === approvalRunId
+      && selectionGeneration.current === approvalGeneration;
     setMutationState("pending");
     setNotice("");
     try {
-      const run = await approveRun(selectedRunId, {
+      const run = await approveRun(approvalRunId, {
         actor: "dashboard-reviewer",
         allow,
         reason: allow ? "Approved in reliability dashboard" : "Denied in reliability dashboard",
       });
-      detail.replaceRun(run);
-      await detail.reloadTrace();
+      if (!isCurrentSelection()) return;
+      detail.replaceRun(run, approvalRunId);
+      await detail.reloadTrace(approvalRunId);
+      if (!isCurrentSelection()) return;
       setMutationState("success");
       setNotice(allow ? "Action allowed" : "Action denied");
     } catch (error) {
+      if (!isCurrentSelection()) return;
       if (error instanceof ApiClientError && error.status === 409) {
-        detail.refresh();
+        detail.refresh(approvalRunId);
         setNotice("Approval state refreshed");
       } else {
         setNotice("The approval decision could not be recorded.");
       }
       setMutationState("error");
     } finally {
-      approvalInFlight.current = false;
+      approvalsInFlight.current.delete(approvalKey);
     }
   };
 
@@ -76,7 +93,7 @@ function Dashboard() {
             state={detail.state}
             mutationState={mutationState}
             onBack={() => {
-              setSelectedRunId(null);
+              selectRun(null);
               setMutationState("idle");
               setNotice("");
               overview.refresh();
@@ -89,7 +106,7 @@ function Dashboard() {
             <h1>Run detail unavailable</h1>
             <p>The selected run or its trace could not be loaded.</p>
             <button type="button" className="primary-button" onClick={() => detail.refresh()}>Try again</button>
-            <button type="button" className="text-button" onClick={() => setSelectedRunId(null)}>Back to Runs</button>
+            <button type="button" className="text-button" onClick={() => selectRun(null)}>Back to Runs</button>
           </main>
         ) : (
           <>
@@ -101,7 +118,7 @@ function Dashboard() {
               scenarios={overview.data.scenarios}
               launching={mutationState === "pending"}
               onSelectRun={(runId) => {
-                setSelectedRunId(runId);
+                selectRun(runId);
                 setNotice("");
               }}
               onStart={(scenarioId, mode) => void startRun(scenarioId, mode)}
