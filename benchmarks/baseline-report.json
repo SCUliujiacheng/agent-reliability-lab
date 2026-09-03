@@ -5,27 +5,63 @@
       "timeout-recovery"
     ],
     "invalid_output_rate_delta": 0.0,
-    "p50_latency_ms_delta": 12.558499999999999,
-    "p95_latency_ms_delta": -6.9669000000000025,
+    "p50_latency_ms_delta": 5.252600000000005,
+    "p95_latency_ms_delta": -11.172399999999996,
     "recovery_rate_delta": 1.0,
     "retry_attempt_count_delta": 2,
     "task_correctness_rate_delta": 0.33333333333333337,
     "tool_sequence_accuracy_delta": 0.05555555555555558,
     "unnecessary_call_count_delta": 0
   },
-  "evaluation_id": "7d12d943-4d22-42d3-b920-6f3a0e3f721f",
-  "generated_at": "2026-09-03T20:06:00.757647Z",
+  "evaluation_id": "20f0b046-2170-4b03-9242-aece6a59ee74",
+  "generated_at": "2026-09-03T20:28:20.536864Z",
   "modes": {
     "fragile": {
       "cases": [
         {
           "accepted_output_count": 2,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "version": "2026.09.04.1"
+              },
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_step": 1,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "prepared": true
+              },
+              "tool_name": "prepare_rollback"
+            }
+          ],
           "actual_tool_sequence": [
             "get_deployment",
             "prepare_rollback"
           ],
           "approval_reconstructed": true,
           "attempt_count": 2,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_deployment",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "prepare_rollback",
+              "transient": null
+            }
+          ],
           "correct": true,
           "declared_faults": [],
           "estimated_cost_usd": "0",
@@ -39,15 +75,17 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 68244900,
+          "latency_ns": 71515400,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
           "observed_faults": [],
           "observed_outcome": "prepared",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "cbd28d08-f3fc-4fbd-9318-93b576d7ed32",
+          "run_id": "3e15ad5f-1e0b-473f-a416-0676a82260f7",
           "scenario_id": "approval-reconstruction",
           "scenario_path": "approval-reconstruction.yaml",
           "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
@@ -56,20 +94,48 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "7d09dff5de567829f230406c9040a7622a89130697afd351cb563c2017bee8d5",
-          "trace_id": "fc2370ca-a6ae-405d-87e9-82b8a8bd8bbf",
+          "trace_digest": "1b298d5d6ed37b8321dfe59a7ad3e3f3c8db47345c11ef49d26e8c3834c606fc",
+          "trace_id": "dce16f1c-bf57-416e-a95d-c39a5e5761de",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 1
         },
         {
           "accepted_output_count": 1,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "get_deployment"
           ],
           "approval_reconstructed": false,
           "attempt_count": 2,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": "invalid_output",
+              "status": "failed",
+              "tool_name": "get_deployment",
+              "transient": false
+            }
+          ],
           "correct": true,
           "declared_faults": [
             {
@@ -90,7 +156,7 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 1,
           "invalid_output_rejected_count": 1,
-          "latency_ns": 29890400,
+          "latency_ns": 29804600,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 1,
           "mode": "fragile",
@@ -103,9 +169,19 @@
             }
           ],
           "observed_outcome": "invalid_output",
+          "output_validation_failures": [
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "code": "invalid_output",
+              "source": "output_model",
+              "tool_name": "get_deployment"
+            }
+          ],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "873a71df-741d-448d-83bc-06c8455e629b",
+          "run_id": "f80ff42a-9547-4975-819b-174fe705ea05",
           "scenario_id": "malformed-output-rejected",
           "scenario_path": "malformed-output-rejected.yaml",
           "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
@@ -114,14 +190,44 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "c8c113518595a4c3c047d298a4ce9f164466b532d6597d6a3b2789aad35e9d65",
-          "trace_id": "49392631-9c96-47a3-862d-345511a64d75",
+          "trace_digest": "b60111eade4824aff862dd39129927297c962c962304b11081400adb88c38c5e",
+          "trace_id": "d54bfdb2-bfec-4b70-96e1-e04b7149e8a1",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 3,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_step": 1,
+              "output": {
+                "entries": [
+                  {
+                    "level": "ERROR",
+                    "message": "checkout timeout contacting ledger"
+                  }
+                ]
+              },
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_step": 2,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "version": "2026.09.04.1"
+              },
+              "tool_name": "get_deployment"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "search_recent_logs",
@@ -129,6 +235,32 @@
           ],
           "approval_reconstructed": false,
           "attempt_count": 3,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "search_recent_logs",
+              "transient": null
+            },
+            {
+              "action_step": 2,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_deployment",
+              "transient": null
+            }
+          ],
           "correct": true,
           "declared_faults": [],
           "estimated_cost_usd": "0",
@@ -143,15 +275,17 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 38236400,
+          "latency_ns": 40034000,
           "logical_tool_call_count": 3,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
           "observed_faults": [],
           "observed_outcome": "diagnosed",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "dc43203d-2171-4c15-997f-0909c2cafd44",
+          "run_id": "4f721aa0-7519-4a35-9d4f-ac69126f3138",
           "scenario_id": "normal-success",
           "scenario_path": "normal-success.yaml",
           "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
@@ -160,19 +294,21 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "8899075b1a2ae117d95490a96114626506586721af760f81c2b6eb24ff8b3094",
-          "trace_id": "490be65e-a87a-44cc-a16b-a3bda0dec33f",
+          "trace_digest": "226d805822abc88fedcaafa908200cdec7b2bdd1723194707c6921744dd875da",
+          "trace_id": "d3cd1f41-05de-400e-9666-1a885bc4139e",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 0,
+          "accepted_outputs": [],
           "actual_tool_sequence": [
             "search_recent_logs"
           ],
           "approval_reconstructed": false,
           "attempt_count": 0,
+          "attempt_evidence": [],
           "correct": true,
           "declared_faults": [],
           "estimated_cost_usd": "0",
@@ -185,15 +321,17 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 16048400,
+          "latency_ns": 15018000,
           "logical_tool_call_count": 1,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
           "observed_faults": [],
           "observed_outcome": "invalid_input",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "9d74fce3-63dc-482a-840e-3c01cf879863",
+          "run_id": "14fcbfa6-7a2b-41ca-b5b2-6aef9f0c2406",
           "scenario_id": "permanent-invalid-input",
           "scenario_path": "permanent-invalid-input.yaml",
           "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
@@ -202,20 +340,48 @@
           "sequence_match_count": 1,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "9707378b4120fd8717f82c463bd6986c0d5a4fde9954aa1900f6819e6c608869",
-          "trace_id": "1e3ab96f-34e2-45f2-9a0e-e07944ac9038",
+          "trace_digest": "5075c737b37818568e471bfda507c3d44e0d6e9f32d3ab79b32cf9c794694e6f",
+          "trace_id": "4d4d8e78-d024-4e05-856e-b7df5af8697d",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 1,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "get_deployment"
           ],
           "approval_reconstructed": false,
           "attempt_count": 2,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": "rate_limit",
+              "status": "failed",
+              "tool_name": "get_deployment",
+              "transient": true
+            }
+          ],
           "correct": false,
           "declared_faults": [
             {
@@ -236,7 +402,7 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 29490100,
+          "latency_ns": 28462100,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -249,9 +415,11 @@
             }
           ],
           "observed_outcome": "rate_limit",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "3891f127-2c64-4ff8-802b-bac4c1289d34",
+          "run_id": "3ba06c96-4c69-404a-9e6d-bf579400ceda",
           "scenario_id": "rate-limit-recovery",
           "scenario_path": "rate-limit-recovery.yaml",
           "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
@@ -260,20 +428,48 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "9dcbb3e921d392daba51ce8ac35736a8638e5a6e12808691c864799752812078",
-          "trace_id": "5bae2607-0fff-4bc3-8620-b402d2be7d1a",
+          "trace_digest": "de017c95d89b6b0ee233f29f81f9ee6a07fe48bbd4e6d45573ddc55bc3b96ce3",
+          "trace_id": "39ebdcb0-dc10-4423-9673-b1b6d87fc523",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 1,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "search_recent_logs"
           ],
           "approval_reconstructed": false,
           "attempt_count": 2,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": "tool_timeout",
+              "status": "failed",
+              "tool_name": "search_recent_logs",
+              "transient": true
+            }
+          ],
           "correct": false,
           "declared_faults": [
             {
@@ -295,7 +491,7 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 29174000,
+          "latency_ns": 29802300,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "fragile",
@@ -308,9 +504,11 @@
             }
           ],
           "observed_outcome": "tool_timeout",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "c65e7e81-393c-476d-91e3-e0df4343b9f3",
+          "run_id": "221a19a4-5932-4ba4-a004-c121755d9907",
           "scenario_id": "timeout-recovery",
           "scenario_path": "timeout-recovery.yaml",
           "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
@@ -319,8 +517,8 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "d9146fa8cbf4201d61cc2ba1d918f24f1345fa1617ffbcdb61ac0376c7a85cbf",
-          "trace_id": "271a1083-23a0-47fe-8023-0874ae132f14",
+          "trace_digest": "6dc41b5db2878a1accf36f70da98415dea22dbe9c15f7db501371cd8eec21ad2",
+          "trace_id": "9ab7f9e4-b450-40d8-af18-dea56232ecb8",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -338,8 +536,8 @@
         "invalid_output_rate": 0.0,
         "invalid_output_rejected_count": 1,
         "malformed_fault_injected_count": 1,
-        "p50_latency_ms": 29.4901,
-        "p95_latency_ms": 68.2449,
+        "p50_latency_ms": 29.8023,
+        "p95_latency_ms": 71.5154,
         "recovered_transient_fault_count": 0,
         "recovery_rate": 0.0,
         "retry_attempt_count": 0,
@@ -356,12 +554,48 @@
       "cases": [
         {
           "accepted_output_count": 2,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "version": "2026.09.04.1"
+              },
+              "tool_name": "get_deployment"
+            },
+            {
+              "action_step": 1,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "prepared": true
+              },
+              "tool_name": "prepare_rollback"
+            }
+          ],
           "actual_tool_sequence": [
             "get_deployment",
             "prepare_rollback"
           ],
           "approval_reconstructed": true,
           "attempt_count": 2,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_deployment",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "prepare_rollback",
+              "transient": null
+            }
+          ],
           "correct": true,
           "declared_faults": [],
           "estimated_cost_usd": "0",
@@ -375,15 +609,17 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 61278000,
+          "latency_ns": 60343000,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
           "observed_faults": [],
           "observed_outcome": "prepared",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "fd37b71e-9e52-4c78-afd4-c3f8a016b3ce",
+          "run_id": "a7a7b138-b3a7-45d6-952f-9deedc975634",
           "scenario_id": "approval-reconstruction",
           "scenario_path": "approval-reconstruction.yaml",
           "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
@@ -392,20 +628,48 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "caeed39565d10dd6af3ad0a2c77056896e78f1f71140b393c626a15cff5be40b",
-          "trace_id": "d73b596b-e03f-4f6c-b107-c7df62cfbf1f",
+          "trace_digest": "de2fc174e8b76afc5ae144fa469d084a12a634fdd317c226434bbb81232db575",
+          "trace_id": "fefd91a1-471c-4618-a0ce-d4704d71bcc1",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 1
         },
         {
           "accepted_output_count": 1,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "get_deployment"
           ],
           "approval_reconstructed": false,
           "attempt_count": 2,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": "invalid_output",
+              "status": "failed",
+              "tool_name": "get_deployment",
+              "transient": false
+            }
+          ],
           "correct": true,
           "declared_faults": [
             {
@@ -426,7 +690,7 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 1,
           "invalid_output_rejected_count": 1,
-          "latency_ns": 29801100,
+          "latency_ns": 29833100,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 1,
           "mode": "resilient",
@@ -439,9 +703,19 @@
             }
           ],
           "observed_outcome": "invalid_output",
+          "output_validation_failures": [
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "code": "invalid_output",
+              "source": "output_model",
+              "tool_name": "get_deployment"
+            }
+          ],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "569589f5-6eea-40de-92c8-ca48f2fd98dd",
+          "run_id": "8c234e83-2084-4478-a54b-d36abac17607",
           "scenario_id": "malformed-output-rejected",
           "scenario_path": "malformed-output-rejected.yaml",
           "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
@@ -450,14 +724,44 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "cb6e2f8ef37e95dd3846466c1b825043c63006413d1706d06fd7af7563e891c3",
-          "trace_id": "d1c819bb-fff8-474f-9f1e-058a369c04a6",
+          "trace_digest": "71bd2a3849af0e9400c9a86444adeda44b5d765c7c53733f73df1187850803e6",
+          "trace_id": "9e9455b4-96e0-4720-8f9c-f251dceb931c",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 3,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_step": 1,
+              "output": {
+                "entries": [
+                  {
+                    "level": "ERROR",
+                    "message": "checkout timeout contacting ledger"
+                  }
+                ]
+              },
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_step": 2,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "version": "2026.09.04.1"
+              },
+              "tool_name": "get_deployment"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "search_recent_logs",
@@ -465,6 +769,32 @@
           ],
           "approval_reconstructed": false,
           "attempt_count": 3,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "search_recent_logs",
+              "transient": null
+            },
+            {
+              "action_step": 2,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_deployment",
+              "transient": null
+            }
+          ],
           "correct": true,
           "declared_faults": [],
           "estimated_cost_usd": "0",
@@ -479,15 +809,17 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 42048600,
+          "latency_ns": 43036000,
           "logical_tool_call_count": 3,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
           "observed_faults": [],
           "observed_outcome": "diagnosed",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "d9d87df5-06dd-42e7-8b3c-6ee1a5288f92",
+          "run_id": "cae431b9-52aa-4ae1-b6bd-a82ba665fc93",
           "scenario_id": "normal-success",
           "scenario_path": "normal-success.yaml",
           "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
@@ -496,19 +828,21 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "16761306163cc47a6728b476079bd9f162a77a9f13922bee8c4c355b12486347",
-          "trace_id": "8927a708-34d7-479b-9c7f-3f373d6fd2d9",
+          "trace_digest": "1df54492c7d28075ee0fb74968896b48be3aa02f55fd86d467a65fd6b43ac05a",
+          "trace_id": "3da7722c-6432-447a-ab8c-4864fef3e3be",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 0,
+          "accepted_outputs": [],
           "actual_tool_sequence": [
             "search_recent_logs"
           ],
           "approval_reconstructed": false,
           "attempt_count": 0,
+          "attempt_evidence": [],
           "correct": true,
           "declared_faults": [],
           "estimated_cost_usd": "0",
@@ -521,15 +855,17 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 15369300,
+          "latency_ns": 15993000,
           "logical_tool_call_count": 1,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
           "observed_faults": [],
           "observed_outcome": "invalid_input",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "bf5d7f23-1d38-45c4-a467-4cf4eaec6ddb",
+          "run_id": "2a037732-1d2f-47e8-aef3-29e94fe2ff3c",
           "scenario_id": "permanent-invalid-input",
           "scenario_path": "permanent-invalid-input.yaml",
           "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
@@ -538,20 +874,64 @@
           "sequence_match_count": 1,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "3480df5d6bd395bc9082f08c3bd279e5096e3fdd698a65cdfd7059ef7f767f0a",
-          "trace_id": "cf884c44-bc4b-4179-8d67-8c4824e8c395",
+          "trace_digest": "f62422f57557d57133f473c995932e93c0d6d08e7ce7e1f5bb760a754735b5a4",
+          "trace_id": "b9f80069-6ffc-47d7-b943-2d7236955c92",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 2,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_step": 1,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "version": "2026.09.04.1"
+              },
+              "tool_name": "get_deployment"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "get_deployment"
           ],
           "approval_reconstructed": false,
           "attempt_count": 3,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": "rate_limit",
+              "status": "failed",
+              "tool_name": "get_deployment",
+              "transient": true
+            },
+            {
+              "action_step": 1,
+              "attempt": 2,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_deployment",
+              "transient": null
+            }
+          ],
           "correct": true,
           "declared_faults": [
             {
@@ -572,7 +952,7 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 43683300,
+          "latency_ns": 35054900,
           "logical_tool_call_count": 2,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -585,9 +965,11 @@
             }
           ],
           "observed_outcome": "diagnosed",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 1,
           "retry_attempt_count": 1,
-          "run_id": "9c3c1613-49d6-415a-9385-c2a67916c572",
+          "run_id": "b7bd8766-7e7b-435d-ac03-45e2a861f7ac",
           "scenario_id": "rate-limit-recovery",
           "scenario_path": "rate-limit-recovery.yaml",
           "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
@@ -596,14 +978,44 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "63bab54d3ef450619e4833735a122ec66d91715115da0aa1cfd86493a6b7232d",
-          "trace_id": "cd684512-7376-49a2-9b4b-a86ebc315eee",
+          "trace_digest": "fe921b1eb5c8fa1006b26086958c242b23604d6397ce3b0f46d5efe2662b1bec",
+          "trace_id": "f314760d-87a2-4a58-92af-3fff90fdbc02",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
         },
         {
           "accepted_output_count": 3,
+          "accepted_outputs": [
+            {
+              "action_step": 0,
+              "output": {
+                "service": "checkout",
+                "status": "degraded"
+              },
+              "tool_name": "get_service_health"
+            },
+            {
+              "action_step": 1,
+              "output": {
+                "entries": [
+                  {
+                    "level": "ERROR",
+                    "message": "checkout timeout contacting ledger"
+                  }
+                ]
+              },
+              "tool_name": "search_recent_logs"
+            },
+            {
+              "action_step": 2,
+              "output": {
+                "deployment_id": "deploy-2026-09-04-001",
+                "version": "2026.09.04.1"
+              },
+              "tool_name": "get_deployment"
+            }
+          ],
           "actual_tool_sequence": [
             "get_service_health",
             "search_recent_logs",
@@ -611,6 +1023,40 @@
           ],
           "approval_reconstructed": false,
           "attempt_count": 4,
+          "attempt_evidence": [
+            {
+              "action_step": 0,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_service_health",
+              "transient": null
+            },
+            {
+              "action_step": 1,
+              "attempt": 1,
+              "error_code": "tool_timeout",
+              "status": "failed",
+              "tool_name": "search_recent_logs",
+              "transient": true
+            },
+            {
+              "action_step": 1,
+              "attempt": 2,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "search_recent_logs",
+              "transient": null
+            },
+            {
+              "action_step": 2,
+              "attempt": 1,
+              "error_code": null,
+              "status": "succeeded",
+              "tool_name": "get_deployment",
+              "transient": null
+            }
+          ],
           "correct": true,
           "declared_faults": [
             {
@@ -632,7 +1078,7 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 44606600,
+          "latency_ns": 51189200,
           "logical_tool_call_count": 3,
           "malformed_fault_injected_count": 0,
           "mode": "resilient",
@@ -645,9 +1091,11 @@
             }
           ],
           "observed_outcome": "diagnosed",
+          "output_validation_failures": [],
+          "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 1,
           "retry_attempt_count": 1,
-          "run_id": "a042dea6-e705-40d3-8224-815906a2e519",
+          "run_id": "2a9b2fd0-60a4-4068-b0e5-6c33a4f4d623",
           "scenario_id": "timeout-recovery",
           "scenario_path": "timeout-recovery.yaml",
           "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
@@ -656,8 +1104,8 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "375d1c6b8a007e2695e3971b13ca2e7a8aa8f9ca424c4893f839acbc7f6d40db",
-          "trace_id": "3cff80e9-2ace-4450-b56d-049ae7a0b267",
+          "trace_digest": "558d2ce372e0afb7a3063e59b0638697aa46c42ca190a1ed09d8f4d11b8f2566",
+          "trace_id": "3600ed74-36f5-4b78-89b6-56bc787a0a2e",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -675,8 +1123,8 @@
         "invalid_output_rate": 0.0,
         "invalid_output_rejected_count": 1,
         "malformed_fault_injected_count": 1,
-        "p50_latency_ms": 42.0486,
-        "p95_latency_ms": 61.278,
+        "p50_latency_ms": 35.0549,
+        "p95_latency_ms": 60.343,
         "recovered_transient_fault_count": 2,
         "recovery_rate": 1.0,
         "retry_attempt_count": 2,
@@ -698,16 +1146,16 @@
       "timeout_seconds": 1.0
     },
     "git_dirty": false,
-    "git_revision": "5cf6604cd85944a4d20414ae56dacf05f6c39026",
-    "grader_version": "exact-v1",
+    "git_revision": "177f5a426de5026fa1c5ccb5623840643d2e1d3d",
+    "grader_version": "exact-v2",
     "latency_kind": "perf_counter_ns",
-    "normalization_version": "baseline-v1",
+    "normalization_version": "baseline-v2",
     "package_version": "0.1.0",
     "percentile_method": "nearest-rank",
     "policy_name": "scripted",
     "python_version": "3.12.13",
-    "report_version": "1",
-    "schema_version": "1",
+    "report_version": "2",
+    "schema_version": "2",
     "suite_hash": "665f6467abe216c13967ed01428a966d69340a5c9e3ceff0c4e96cf87d3671c8",
     "suite_manifest": [
       {
