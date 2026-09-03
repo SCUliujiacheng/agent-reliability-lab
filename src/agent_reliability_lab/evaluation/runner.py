@@ -15,6 +15,8 @@ from time import perf_counter_ns
 from typing import Any, cast
 from uuid import uuid4
 
+from pydantic import JsonValue, ValidationError
+
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.actions import CallToolAction
 from agent_reliability_lab.domain.runs import Run, RunStatus
@@ -25,6 +27,8 @@ from agent_reliability_lab.evaluation.graders import (
     unnecessary_call_count,
 )
 from agent_reliability_lab.evaluation.models import (
+    AcceptedOutputEvidence,
+    AttemptEvidence,
     CaseResult,
     EffectiveConfiguration,
     EvaluationMode,
@@ -33,6 +37,7 @@ from agent_reliability_lab.evaluation.models import (
     FaultEvidence,
     ModeComparison,
     ModeResult,
+    OutputValidationEvidence,
     SuiteManifestEntry,
 )
 from agent_reliability_lab.runtime.service import RunService
@@ -40,6 +45,7 @@ from agent_reliability_lab.scenarios.loader import load_scenario, scenario_sha25
 from agent_reliability_lab.storage.models import TraceEvent
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
+from agent_reliability_lab.tools.contracts import ToolRegistry
 from agent_reliability_lab.tools.gateway import ToolGateway
 from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
 
@@ -83,7 +89,10 @@ def build_suite_manifest(suite: Path) -> tuple[SuiteManifestEntry, ...]:
 def suite_sha256(manifest: Sequence[SuiteManifestEntry]) -> str:
     """Hash canonical JSON for the exact-byte suite manifest."""
     canonical = json.dumps(
-        [entry.model_dump(mode="json") for entry in manifest],
+        [
+            entry.model_dump(mode="json")
+            for entry in sorted(manifest, key=lambda item: item.relative_path)
+        ],
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -233,15 +242,22 @@ async def _run_case(
     with TemporaryDirectory(prefix="arl-evaluation-") as temporary:
         database_path = Path(temporary) / "case.db"
         try:
-            service, backend = _build_service(database_path, scenario)
+            service, backend, registry = _build_service(database_path, scenario)
             stores.append(service.store)
             started = perf_counter_ns()
             run = await service.start(scenario.id, mode)
             approval_reconstructed = False
-            write_execution_count = backend.rollback_preparations
+            pre_pause_write_execution_count = backend.rollback_preparations
+            write_execution_count = pre_pause_write_execution_count
             if run.status is RunStatus.WAITING_APPROVAL and scenario.approval_supplied:
                 approval_reconstructed = True
-                service, reconstructed_backend = _build_service(database_path, scenario)
+                if pre_pause_write_execution_count != 0:
+                    raise EvaluationInfrastructureError(
+                        f"approval wrote before pause: {scenario.id}"
+                    )
+                service, reconstructed_backend, registry = _build_service(
+                    database_path, scenario
+                )
                 stores.append(service.store)
                 run = await service.approve(
                     run.id,
@@ -249,14 +265,21 @@ async def _run_case(
                     allow=True,
                     reason="frozen suite approval",
                 )
-                write_execution_count = reconstructed_backend.rollback_preparations
+                write_execution_count = (
+                    pre_pause_write_execution_count
+                    + reconstructed_backend.rollback_preparations
+                )
                 repeated = await service.approve(
                     run.id,
                     actor="evaluation-reviewer",
                     allow=True,
                     reason="frozen suite approval",
                 )
-                if repeated != run or reconstructed_backend.rollback_preparations != 1:
+                total_effects = (
+                    pre_pause_write_execution_count
+                    + reconstructed_backend.rollback_preparations
+                )
+                if repeated != run or total_effects != 1:
                     raise EvaluationInfrastructureError(
                         f"approval was not exactly once: {scenario.id}"
                     )
@@ -268,8 +291,10 @@ async def _run_case(
                 mode,
                 run,
                 events,
+                registry,
                 latency_ns=latency_ns,
                 approval_reconstructed=approval_reconstructed,
+                pre_pause_write_execution_count=pre_pause_write_execution_count,
                 write_execution_count=write_execution_count,
                 store_run_count=len(service.list()),
             )
@@ -281,7 +306,7 @@ async def _run_case(
 
 def _build_service(
     database_path: Path, scenario: Scenario
-) -> tuple[RunService, IncidentBackend]:
+) -> tuple[RunService, IncidentBackend, ToolRegistry]:
     settings = Settings(
         data_dir=database_path.parent.resolve(),
         database_path=database_path.resolve(),
@@ -290,6 +315,7 @@ def _build_service(
     store.create_schema()
     recorder = TraceRecorder(store)
     backend = IncidentBackend()
+    registry = incident_registry(backend)
 
     async def no_delay(_: float) -> None:
         return None
@@ -297,13 +323,14 @@ def _build_service(
     gateway = ToolGateway(
         store,
         recorder,
-        incident_registry(backend),
+        registry,
         sleeper=no_delay,
         incident_backend=backend,
     )
     return (
         RunService(store, recorder, gateway, {scenario.id: scenario}.__getitem__),
         backend,
+        registry,
     )
 
 
@@ -313,9 +340,11 @@ def _grade_case(
     mode: EvaluationMode,
     run: Run,
     events: Sequence[TraceEvent],
+    registry: ToolRegistry,
     *,
     latency_ns: int,
     approval_reconstructed: bool,
+    pre_pause_write_execution_count: int,
     write_execution_count: int,
     store_run_count: int,
 ) -> CaseResult:
@@ -329,28 +358,22 @@ def _grade_case(
         )
     observed_outcome = _observed_outcome(run)
     correct = observed_outcome == scenario.expected_outcome
-    attempt_events = _events(events, "tool.attempt.started")
-    successes = _events(events, "tool.attempt.succeeded")
-    failures = _events(events, "tool.attempt.failed")
-    accepted_steps = _accepted_steps(run)
-    invalid_failures = [
-        event for event in failures if _payload(event).get("code") == "invalid_output"
-    ]
-    invalid_accepted = sum(
-        int(cast(int, _payload(event)["action_step"]) in accepted_steps)
-        for event in invalid_failures
-    )
+    attempt_evidence = _attempt_evidence(events)
+    accepted_outputs = accepted_output_evidence(run, scenario, registry)
+    validation_failures = _output_validation_evidence(events)
+    invalid_accepted = count_invalid_accepted_outputs(accepted_outputs, registry)
     transient_declared = [
         fault
         for fault, rule in zip(declared, scenario.faults, strict=True)
         if rule.type in _TRANSIENT_FAULTS
     ]
     recovered = sum(
-        _fault_recovered(fault, successes, correct) for fault in transient_declared
+        _fault_recovered(fault, attempt_evidence, correct)
+        for fault in transient_declared
     )
     retries_by_step: dict[int, int] = defaultdict(int)
-    for event in attempt_events:
-        retries_by_step[cast(int, _payload(event)["action_step"])] += 1
+    for attempt in attempt_evidence:
+        retries_by_step[attempt.action_step] += 1
     retry_attempts = sum(max(0, count - 1) for count in retries_by_step.values())
     malformed = sum(fault.kind == "malformed_output" for fault in observed)
     return CaseResult(
@@ -374,22 +397,26 @@ def _grade_case(
             scenario.expected_tool_sequence, actual_sequence
         ),
         logical_tool_call_count=len(actual_sequence),
-        attempt_count=len(attempt_events),
+        attempt_evidence=attempt_evidence,
+        attempt_count=len(attempt_evidence),
         retry_attempt_count=retry_attempts,
         declared_faults=declared,
         observed_faults=observed,
         verified_transient_fault_count=len(transient_declared),
         recovered_transient_fault_count=recovered,
-        accepted_output_count=len(accepted_steps),
+        accepted_outputs=accepted_outputs,
+        accepted_output_count=len(accepted_outputs),
         invalid_output_accepted_count=invalid_accepted,
-        invalid_output_detected_count=len(invalid_failures),
-        invalid_output_rejected_count=len(invalid_failures) - invalid_accepted,
+        invalid_output_detected_count=len(validation_failures),
+        invalid_output_rejected_count=len(validation_failures),
         malformed_fault_injected_count=malformed,
+        output_validation_failures=validation_failures,
         latency_ns=latency_ns,
         estimated_input_tokens=0,
         estimated_output_tokens=0,
         estimated_cost_usd=Decimal(0),
         approval_reconstructed=approval_reconstructed,
+        pre_pause_write_execution_count=pre_pause_write_execution_count,
         write_execution_count=write_execution_count,
         store_run_count=store_run_count,
     )
@@ -466,32 +493,121 @@ def _logical_tool_sequence(events: Sequence[TraceEvent]) -> tuple[str, ...]:
 
 
 def _fault_recovered(
-    fault: FaultEvidence, successes: Sequence[TraceEvent], correct: bool
+    fault: FaultEvidence, attempts: Sequence[AttemptEvidence], correct: bool
 ) -> int:
     return int(
         correct
         and any(
-            _payload(event).get("action_step") == fault.action_step
-            and _payload(event).get("tool_name") == fault.tool_name
-            and cast(int, _payload(event).get("attempt", 0)) > fault.attempt
-            for event in successes
+            attempt.action_step == fault.action_step
+            and attempt.tool_name == fault.tool_name
+            and attempt.attempt > fault.attempt
+            and attempt.status == "succeeded"
+            for attempt in attempts
         )
     )
 
 
-def _accepted_steps(run: Run) -> set[int]:
+def _attempt_evidence(events: Sequence[TraceEvent]) -> tuple[AttemptEvidence, ...]:
+    started = [
+        (
+            cast(int, _payload(event)["action_step"]),
+            cast(str, _payload(event)["tool_name"]),
+            cast(int, _payload(event)["attempt"]),
+        )
+        for event in _events(events, "tool.attempt.started")
+    ]
+    terminal_events = [
+        event
+        for event in events
+        if event.event_type
+        in {
+            "tool.attempt.succeeded",
+            "tool.attempt.failed",
+            "tool.attempt.cancelled",
+        }
+    ]
+    evidence: list[AttemptEvidence] = []
+    identities: list[tuple[int, str, int]] = []
+    for event in terminal_events:
+        payload = _payload(event)
+        identity = (
+            cast(int, payload["action_step"]),
+            cast(str, payload["tool_name"]),
+            cast(int, payload["attempt"]),
+        )
+        identities.append(identity)
+        status = event.event_type.removeprefix("tool.attempt.")
+        evidence.append(
+            AttemptEvidence(
+                action_step=identity[0],
+                tool_name=identity[1],
+                attempt=identity[2],
+                status=cast(Any, status),
+                error_code=cast(str | None, payload.get("code")),
+                transient=cast(bool | None, payload.get("transient")),
+            )
+        )
+    if Counter(started) != Counter(identities):
+        raise EvaluationInfrastructureError("attempt trace evidence is incomplete")
+    return tuple(evidence)
+
+
+def _output_validation_evidence(
+    events: Sequence[TraceEvent],
+) -> tuple[OutputValidationEvidence, ...]:
+    return tuple(
+        OutputValidationEvidence.model_validate(_payload(event))
+        for event in _events(events, "tool.output.validation_failed")
+    )
+
+
+def accepted_output_evidence(
+    run: Run, scenario: Scenario, registry: ToolRegistry
+) -> tuple[AcceptedOutputEvidence, ...]:
     results = run.context.get("tool_results", {})
     if not isinstance(results, dict):
-        return set()
-    accepted: set[int] = set()
-    for step in results:
+        return ()
+    accepted: list[AcceptedOutputEvidence] = []
+    for raw_step, output in results.items():
         try:
-            accepted.add(int(step))
-        except (TypeError, ValueError):
+            step = int(raw_step)
+            action = scenario.actions[step]
+        except (TypeError, ValueError, IndexError):
             raise EvaluationInfrastructureError(
                 "run context has a non-numeric tool step"
             ) from None
-    return accepted
+        if (
+            not isinstance(action, CallToolAction)
+            or registry.get(action.tool_name) is None
+        ):
+            raise EvaluationInfrastructureError(
+                "run context result has no registered tool"
+            )
+        accepted.append(
+            AcceptedOutputEvidence(
+                action_step=step,
+                tool_name=action.tool_name,
+                output=cast(JsonValue, output),
+            )
+        )
+    return tuple(sorted(accepted, key=lambda item: item.action_step))
+
+
+def count_invalid_accepted_outputs(
+    accepted_outputs: Sequence[AcceptedOutputEvidence], registry: ToolRegistry
+) -> int:
+    """Independently validate durable context values against registered schemas."""
+    invalid = 0
+    for accepted in accepted_outputs:
+        definition = registry.get(accepted.tool_name)
+        if definition is None:
+            invalid += 1
+            continue
+        try:
+            definition.output_model.model_validate(accepted.output)
+        except ValidationError:
+            invalid += 1
+    return invalid
 
 
 def _observed_outcome(run: Run) -> str:
@@ -576,8 +692,10 @@ def _package_version() -> str:
 
 __all__ = [
     "EvaluationInfrastructureError",
+    "accepted_output_evidence",
     "build_suite_manifest",
     "compare_modes",
+    "count_invalid_accepted_outputs",
     "run_evaluation",
     "stable_report_projection",
     "suite_sha256",

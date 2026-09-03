@@ -18,6 +18,7 @@ from agent_reliability_lab.tools.contracts import (
     ToolRegistry,
 )
 from agent_reliability_lab.tools.faults import (
+    FaultKind,
     FaultPlan,
     FaultRule,
     no_faults,
@@ -88,6 +89,40 @@ def test_gateway_retries_a_transient_timeout_and_records_attempts(
         "tool.attempt.started",
         "tool.attempt.succeeded",
     ]
+
+
+def test_malformed_fault_traverses_authoritative_output_validation(
+    tmp_path: Path,
+) -> None:
+    """An injector-manufactured error code cannot prove schema rejection."""
+    gateway, run = _gateway(tmp_path)
+    faults = FaultPlan(
+        (
+            FaultRule(
+                tool_name="get_deployment",
+                attempt=1,
+                kind=FaultKind.MALFORMED_OUTPUT,
+            ),
+        )
+    )
+
+    result = gateway.call_sync(run, _call("get_deployment"), faults)
+
+    assert result.error_code == "invalid_output"
+    assert [event.event_type for event in gateway.events] == [
+        "tool.attempt.started",
+        "fault.injected",
+        "tool.output.validation_failed",
+        "tool.attempt.failed",
+    ]
+    validation = gateway.events[2]
+    assert validation.payload == {
+        "tool_name": "get_deployment",
+        "attempt": 1,
+        "action_step": 0,
+        "code": "invalid_output",
+        "source": "output_model",
+    }
     assert [event.event_type for event in gateway.store.list_events(run.trace_id)] == [
         event.event_type for event in gateway.events
     ]

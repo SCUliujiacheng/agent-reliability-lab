@@ -5,15 +5,24 @@ from pathlib import Path
 
 import pytest
 
+from agent_reliability_lab.config import Settings
+from agent_reliability_lab.domain.runs import Run
+from agent_reliability_lab.evaluation.gate import enforce_gate
+from agent_reliability_lab.evaluation.graders import aggregate_cases
 from agent_reliability_lab.evaluation.models import EvaluationReport
 from agent_reliability_lab.evaluation.runner import (
     EvaluationInfrastructureError,
+    accepted_output_evidence,
     build_suite_manifest,
     compare_modes,
+    count_invalid_accepted_outputs,
     run_evaluation,
     stable_report_projection,
     suite_sha256,
 )
+from agent_reliability_lab.scenarios.loader import load_scenario
+from agent_reliability_lab.storage.store import SQLiteRunStore
+from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
 
 SUITE = Path(__file__).parents[2] / "scenarios" / "incident-response"
 
@@ -73,6 +82,14 @@ async def test_fault_evidence_retries_and_safe_failures_are_measured_from_trace(
     assert timeout.retry_attempt_count == 1
     assert timeout.recovered_transient_fault_count == 1
     assert {fault.action_step for fault in timeout.observed_faults} == {1}
+    assert [
+        (attempt.attempt, attempt.status)
+        for attempt in timeout.attempt_evidence
+        if attempt.action_step == 1
+    ] == [
+        (1, "failed"),
+        (2, "succeeded"),
+    ]
 
     malformed = cases["malformed-output-rejected"]
     assert malformed.malformed_fault_injected_count == 1
@@ -80,6 +97,8 @@ async def test_fault_evidence_retries_and_safe_failures_are_measured_from_trace(
     assert malformed.invalid_output_rejected_count == 1
     assert malformed.invalid_output_accepted_count == 0
     assert malformed.accepted_output_count == 1
+    assert len(malformed.output_validation_failures) == 1
+    assert malformed.output_validation_failures[0].source == "output_model"
     assert malformed.correct is True
 
     permanent = cases["permanent-invalid-input"]
@@ -98,8 +117,65 @@ async def test_approval_case_reconstructs_and_executes_write_once() -> None:
     )
 
     assert approval.approval_reconstructed is True
+    assert approval.pre_pause_write_execution_count == 0
     assert approval.write_execution_count == 1
     assert approval.logical_tool_call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_accepted_context_outputs_are_independently_schema_validated(
+    tmp_path: Path,
+) -> None:
+    report = await run_evaluation(SUITE, modes=("fragile", "resilient"))
+    resilient = report.modes["resilient"]
+    normal = next(
+        case for case in resilient.cases if case.scenario_id == "normal-success"
+    )
+    scenario = load_scenario(SUITE / "normal-success.yaml")
+    backend = IncidentBackend()
+    registry = incident_registry(backend)
+    polluted_run = Run.new(scenario.id, "resilient").model_copy(
+        update={"context": {"tool_results": {"2": {"not": "a deployment"}}}}
+    )
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / "polluted.db")
+    )
+    store.create_schema()
+    polluted_run = store.save_run(polluted_run)
+    reconstructed = store.get_run(polluted_run.id)
+    assert reconstructed is not None
+    evidence = accepted_output_evidence(reconstructed, scenario, registry)
+    assert count_invalid_accepted_outputs(evidence, registry) == 1
+    store.close()
+
+    polluted = normal.model_copy(
+        update={
+            "accepted_outputs": (
+                *normal.accepted_outputs[:2],
+                *evidence,
+            ),
+            "invalid_output_accepted_count": 1,
+        }
+    )
+    cases = tuple(
+        polluted if case.scenario_id == normal.scenario_id else case
+        for case in resilient.cases
+    )
+    changed_mode = resilient.model_copy(
+        update={"cases": cases, "metrics": aggregate_cases(cases)}
+    )
+    polluted_report = report.model_copy(
+        update={"modes": {**report.modes, "resilient": changed_mode}}
+    )
+    polluted_report = polluted_report.model_copy(
+        update={"comparison": compare_modes(polluted_report)}
+    )
+
+    result = enforce_gate(polluted_report)
+
+    assert result.comparable is True
+    assert result.passed is False
+    assert "invalid_output_rate" in result.failures
 
 
 @pytest.mark.asyncio

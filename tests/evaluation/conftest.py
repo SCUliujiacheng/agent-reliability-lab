@@ -8,14 +8,18 @@ import pytest
 
 from agent_reliability_lab.evaluation.graders import aggregate_cases
 from agent_reliability_lab.evaluation.models import (
+    AcceptedOutputEvidence,
+    AttemptEvidence,
     CaseResult,
     EffectiveConfiguration,
     EvaluationProvenance,
     EvaluationReport,
     FaultEvidence,
     ModeResult,
+    OutputValidationEvidence,
     SuiteManifestEntry,
 )
+from agent_reliability_lab.evaluation.runner import compare_modes, suite_sha256
 
 
 def make_case(
@@ -41,6 +45,53 @@ def make_case(
         if recoverable
         else ()
     )
+    effective_recovered = recovered if correct else 0
+    attempts = []
+    if recoverable:
+        attempts.append(
+            AttemptEvidence(
+                action_step=0,
+                tool_name="search_recent_logs",
+                attempt=1,
+                status="failed",
+                error_code="tool_timeout",
+                transient=True,
+            )
+        )
+        if effective_recovered:
+            attempts.append(
+                AttemptEvidence(
+                    action_step=0,
+                    tool_name="search_recent_logs",
+                    attempt=2,
+                    status="succeeded",
+                )
+            )
+    elif accepted:
+        attempts.append(
+            AttemptEvidence(
+                action_step=0,
+                tool_name="search_recent_logs",
+                attempt=1,
+                status="succeeded",
+            )
+        )
+    accepted_outputs = tuple(
+        AcceptedOutputEvidence(
+            action_step=index,
+            tool_name="search_recent_logs",
+            output=(
+                {}
+                if index < invalid_accepted
+                else {
+                    "entries": [
+                        {"level": "ERROR", "message": "synthetic benchmark log"}
+                    ]
+                }
+            ),
+        )
+        for index in range(accepted)
+    )
     return CaseResult(
         scenario_id=scenario_id,
         scenario_version=1,
@@ -60,22 +111,26 @@ def make_case(
         sequence_denominator=1,
         unnecessary_call_count=0,
         logical_tool_call_count=1,
-        attempt_count=1 + recovered,
-        retry_attempt_count=recovered,
+        attempt_evidence=tuple(attempts),
+        attempt_count=len(attempts),
+        retry_attempt_count=effective_recovered,
         declared_faults=declared,
         observed_faults=declared,
         verified_transient_fault_count=recoverable,
-        recovered_transient_fault_count=recovered,
+        recovered_transient_fault_count=effective_recovered,
+        accepted_outputs=accepted_outputs,
         accepted_output_count=accepted,
         invalid_output_accepted_count=invalid_accepted,
         invalid_output_detected_count=0,
         invalid_output_rejected_count=0,
         malformed_fault_injected_count=0,
+        output_validation_failures=tuple[OutputValidationEvidence, ...](),
         latency_ns=1_000_000,
         estimated_input_tokens=0,
         estimated_output_tokens=0,
         estimated_cost_usd=Decimal(0),
         approval_reconstructed=False,
+        pre_pause_write_execution_count=0,
         write_execution_count=0,
         store_run_count=1,
     )
@@ -85,7 +140,7 @@ def make_report(
     *,
     resilient_cases: tuple[CaseResult, ...] | None = None,
     fragile_cases: tuple[CaseResult, ...] | None = None,
-    suite_hash: str = "a" * 64,
+    suite_hash: str | None = None,
 ) -> EvaluationReport:
     if resilient_cases is None:
         resilient_cases = (make_case(),)
@@ -111,11 +166,11 @@ def make_report(
         for case in resilient_cases
     )
     provenance = EvaluationProvenance(
-        report_version="1",
-        schema_version="1",
-        grader_version="exact-v1",
-        normalization_version="baseline-v1",
-        suite_hash=suite_hash,
+        report_version="2",
+        schema_version="2",
+        grader_version="exact-v2",
+        normalization_version="baseline-v2",
+        suite_hash=suite_hash or suite_sha256(manifest),
         suite_manifest=manifest,
         git_revision="f" * 40,
         git_dirty=False,
@@ -127,7 +182,7 @@ def make_report(
         percentile_method="nearest-rank",
         token_estimator="scripted-no-provider-v1",
     )
-    return EvaluationReport(
+    report = EvaluationReport(
         evaluation_id=UUID(int=3),
         generated_at=datetime(2026, 9, 4, tzinfo=UTC),
         provenance=provenance,
@@ -144,6 +199,7 @@ def make_report(
             ),
         },
     )
+    return report.model_copy(update={"comparison": compare_modes(report)})
 
 
 @pytest.fixture

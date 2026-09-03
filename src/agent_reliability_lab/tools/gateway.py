@@ -266,14 +266,31 @@ class ToolGateway:
                         status="error",
                     )
                     if injected.kind is FaultKind.MALFORMED_OUTPUT:
-                        raise PermanentToolError(
-                            "invalid_output", "injected malformed tool output"
+                        raw = {"__arl_malformed_output__": True}
+                    else:
+                        raise InjectedFault(injected.kind, tool_name=action.tool_name)
+                else:
+                    raw = await self._invoke_with_timeout(
+                        definition, validated_input, context
+                    )
+                try:
+                    output = self._validated_output(definition, raw)
+                except PermanentToolError as validation_error:
+                    if validation_error.code == "invalid_output":
+                        self._record(
+                            run,
+                            "tool.output.validation_failed",
+                            {
+                                "tool_name": action.tool_name,
+                                "attempt": attempt,
+                                "action_step": run.current_step,
+                                "code": "invalid_output",
+                                "source": "output_model",
+                            },
+                            span_id=span_id,
+                            status="error",
                         )
-                    raise InjectedFault(injected.kind, tool_name=action.tool_name)
-                raw = await self._invoke_with_timeout(
-                    definition, validated_input, context
-                )
-                output = self._validated_output(definition, raw)
+                    raise
             except asyncio.CancelledError:
                 self._record(
                     run,

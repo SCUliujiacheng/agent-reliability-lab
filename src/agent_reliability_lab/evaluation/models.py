@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 type EvaluationMode = Literal["fragile", "resilient"]
 
@@ -31,10 +31,10 @@ class EffectiveConfiguration(ReportModel):
 
 
 class EvaluationProvenance(ReportModel):
-    report_version: Literal["1"] = "1"
-    schema_version: Literal["1"] = "1"
-    grader_version: Literal["exact-v1"] = "exact-v1"
-    normalization_version: Literal["baseline-v1"] = "baseline-v1"
+    report_version: Literal["2"] = "2"
+    schema_version: Literal["2"] = "2"
+    grader_version: Literal["exact-v2"] = "exact-v2"
+    normalization_version: Literal["baseline-v2"] = "baseline-v2"
     suite_hash: str = Field(min_length=64, max_length=64)
     suite_manifest: tuple[SuiteManifestEntry, ...]
     git_revision: str
@@ -53,6 +53,35 @@ class FaultEvidence(ReportModel):
     tool_name: str = Field(min_length=1)
     attempt: int = Field(ge=1)
     kind: Literal["timeout", "rate_limit", "tool_error", "malformed_output"]
+
+
+class AttemptEvidence(ReportModel):
+    """One trace-derived terminal attempt outcome used to reconstruct recovery."""
+
+    action_step: int = Field(ge=0)
+    tool_name: str = Field(min_length=1)
+    attempt: int = Field(ge=1)
+    status: Literal["succeeded", "failed", "cancelled"]
+    error_code: str | None = None
+    transient: bool | None = None
+
+
+class AcceptedOutputEvidence(ReportModel):
+    """One durable context result retained for independent schema validation."""
+
+    action_step: int = Field(ge=0)
+    tool_name: str = Field(min_length=1)
+    output: JsonValue
+
+
+class OutputValidationEvidence(ReportModel):
+    """An authoritative output-model rejection observed at the gateway boundary."""
+
+    action_step: int = Field(ge=0)
+    tool_name: str = Field(min_length=1)
+    attempt: int = Field(ge=1)
+    code: Literal["invalid_output"] = "invalid_output"
+    source: Literal["output_model"] = "output_model"
 
 
 class CaseResult(ReportModel):
@@ -74,22 +103,26 @@ class CaseResult(ReportModel):
     sequence_denominator: int = Field(ge=0)
     unnecessary_call_count: int = Field(ge=0)
     logical_tool_call_count: int = Field(ge=0)
+    attempt_evidence: tuple[AttemptEvidence, ...]
     attempt_count: int = Field(ge=0)
     retry_attempt_count: int = Field(ge=0)
     declared_faults: tuple[FaultEvidence, ...]
     observed_faults: tuple[FaultEvidence, ...]
     verified_transient_fault_count: int = Field(ge=0)
     recovered_transient_fault_count: int = Field(ge=0)
+    accepted_outputs: tuple[AcceptedOutputEvidence, ...]
     accepted_output_count: int = Field(ge=0)
     invalid_output_accepted_count: int = Field(ge=0)
     invalid_output_detected_count: int = Field(ge=0)
     invalid_output_rejected_count: int = Field(ge=0)
     malformed_fault_injected_count: int = Field(ge=0)
+    output_validation_failures: tuple[OutputValidationEvidence, ...]
     latency_ns: int = Field(ge=0)
     estimated_input_tokens: int = Field(ge=0)
     estimated_output_tokens: int = Field(ge=0)
     estimated_cost_usd: Decimal = Field(ge=0)
     approval_reconstructed: bool
+    pre_pause_write_execution_count: int = Field(ge=0)
     write_execution_count: int = Field(ge=0)
     store_run_count: int = Field(ge=0)
 
@@ -153,6 +186,8 @@ class GateResult(ReportModel):
 
 
 __all__ = [
+    "AcceptedOutputEvidence",
+    "AttemptEvidence",
     "CaseResult",
     "EffectiveConfiguration",
     "EvaluationMode",
@@ -163,5 +198,6 @@ __all__ = [
     "ModeComparison",
     "ModeMetrics",
     "ModeResult",
+    "OutputValidationEvidence",
     "SuiteManifestEntry",
 ]
