@@ -2,6 +2,8 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
+from pathlib import Path
 from threading import Event
 
 import httpx
@@ -13,6 +15,7 @@ from agent_reliability_lab.api.services import (
     RunApplicationService,
 )
 from agent_reliability_lab.config import Settings
+from agent_reliability_lab.storage.store import SQLiteRunStore
 
 from .conftest import assert_error, make_settings
 
@@ -22,6 +25,60 @@ def test_health_reports_database_readiness(client) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ready", "database": "ready"}
+
+
+def test_failed_catalog_startup_leaves_database_path_removable(
+    tmp_path: Path,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from agent_reliability_lab.api.app import create_app
+
+    empty_scenario_dir = tmp_path / "empty-scenarios"
+    empty_scenario_dir.mkdir()
+    settings = replace(
+        make_settings(tmp_path / "failed-startup"),
+        scenario_dir=empty_scenario_dir,
+        evaluation_suites=(("incident-response", empty_scenario_dir),),
+    )
+
+    with (
+        pytest.raises(ValueError, match="scenario catalog is empty"),
+        TestClient(create_app(settings)),
+    ):
+        pytest.fail("an empty catalog must fail during startup")
+
+    try:
+        settings.database_path.unlink(missing_ok=True)
+    except PermissionError as error:
+        pytest.fail(f"failed startup leaked the SQLite handle: {error}")
+    assert not settings.database_path.exists()
+
+
+def test_successful_lifespan_closes_store_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from agent_reliability_lab.api.app import create_app
+
+    close_count = 0
+    original_close = SQLiteRunStore.close
+
+    def counted_close(store: SQLiteRunStore) -> None:
+        nonlocal close_count
+        close_count += 1
+        original_close(store)
+
+    monkeypatch.setattr(SQLiteRunStore, "close", counted_close)
+    settings = make_settings(tmp_path / "successful-startup")
+
+    with TestClient(create_app(settings)) as api:
+        assert api.get("/health").status_code == 200
+
+    assert close_count == 1
+    settings.database_path.unlink()
+    assert not settings.database_path.exists()
 
 
 def test_health_failure_uses_stable_secret_free_envelope(client, app) -> None:

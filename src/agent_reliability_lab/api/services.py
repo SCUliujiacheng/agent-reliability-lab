@@ -312,12 +312,12 @@ class ApiContainer:
             or (Path.cwd() / "scenarios" / "incident-response").resolve()
         )
         suites = settings.evaluation_suites or (("incident-response", scenario_dir),)
+        self.catalog = ScenarioCatalog(scenario_dir, suites)
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.store = SQLiteRunStore.from_settings(
             settings, secret_values=set(settings.secret_values)
         )
         self.store.create_schema()
-        self.catalog = ScenarioCatalog(scenario_dir, suites)
         self.queries = RunQueryService(self.store)
         self.runs = RunApplicationService(
             self.store,
