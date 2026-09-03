@@ -2,7 +2,11 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_reliability_lab.tools.contracts import ToolDefinition, ToolRegistry
+from agent_reliability_lab.tools.contracts import (
+    ToolDefinition,
+    ToolExecutionContext,
+    ToolRegistry,
+)
 
 
 class EmptyInput(BaseModel):
@@ -68,27 +72,41 @@ class IncidentBackend:
 
     def __init__(self) -> None:
         self.rollback_preparations = 0
+        self._rollback_by_token: dict[str, PrepareRollbackOutput] = {}
 
-    async def get_service_health(self, _: EmptyInput) -> ServiceHealthOutput:
+    async def get_service_health(
+        self, _: EmptyInput, __: ToolExecutionContext
+    ) -> ServiceHealthOutput:
         return ServiceHealthOutput(service="checkout", status="degraded")
 
-    async def search_recent_logs(self, _: EmptyInput) -> RecentLogsOutput:
+    async def search_recent_logs(
+        self, _: EmptyInput, __: ToolExecutionContext
+    ) -> RecentLogsOutput:
         return RecentLogsOutput(
             entries=[
                 LogEntry(level="ERROR", message="checkout timeout contacting ledger")
             ]
         )
 
-    async def get_deployment(self, _: EmptyInput) -> DeploymentOutput:
+    async def get_deployment(
+        self, _: EmptyInput, __: ToolExecutionContext
+    ) -> DeploymentOutput:
         return DeploymentOutput(
             deployment_id="deploy-2026-09-04-001", version="2026.09.04.1"
         )
 
     async def prepare_rollback(
-        self, value: PrepareRollbackInput
+        self, value: PrepareRollbackInput, context: ToolExecutionContext
     ) -> PrepareRollbackOutput:
+        existing = self._rollback_by_token.get(context.idempotency_token)
+        if existing is not None:
+            return existing
         self.rollback_preparations += 1
-        return PrepareRollbackOutput(deployment_id=value.deployment_id, prepared=True)
+        prepared = PrepareRollbackOutput(
+            deployment_id=value.deployment_id, prepared=True
+        )
+        self._rollback_by_token[context.idempotency_token] = prepared
+        return prepared
 
 
 def incident_registry(backend: IncidentBackend) -> ToolRegistry:
@@ -122,6 +140,8 @@ def incident_registry(backend: IncidentBackend) -> ToolRegistry:
             PrepareRollbackOutput,
             backend.prepare_rollback,
             requires_approval=True,
+            is_write=True,
+            idempotent=True,
         )
     )
     return registry

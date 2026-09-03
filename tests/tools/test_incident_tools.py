@@ -25,7 +25,13 @@ def _gateway(tmp_path: Path) -> tuple[ToolGateway, Run, IncidentBackend]:
 
 
 def _call(name: str, arguments: dict[str, object] | None = None) -> CallToolAction:
-    return CallToolAction(tool_name=name, arguments=arguments or {})
+    return CallToolAction(
+        tool_name=name,
+        arguments=arguments or {},
+        idempotency_key="rollback-approval-test"
+        if name == "prepare_rollback"
+        else None,
+    )
 
 
 def test_incident_reads_return_schema_validated_deterministic_data(
@@ -68,3 +74,19 @@ def test_prepare_rollback_requires_approval_before_one_mutation(tmp_path: Path) 
         "prepared": True,
     }
     assert backend.rollback_preparations == 1
+
+
+def test_prepare_rollback_returns_explicit_denial_without_a_mutation(
+    tmp_path: Path,
+) -> None:
+    """A recorded denial must be distinguishable from a missing review."""
+    gateway, run, backend = _gateway(tmp_path)
+    gateway.store.record_approval(run.id, actor="reviewer", allow=False, reason="scope")
+
+    result = gateway.call_sync(
+        run,
+        _call("prepare_rollback", {"deployment_id": "deploy-2026-09-04-001"}),
+    )
+
+    assert result.error_code == "approval_denied"
+    assert backend.rollback_preparations == 0

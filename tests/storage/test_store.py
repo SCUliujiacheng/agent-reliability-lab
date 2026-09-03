@@ -9,7 +9,11 @@ import pytest
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.runs import Run
 from agent_reliability_lab.storage.models import ToolClaimState, TraceEvent
-from agent_reliability_lab.storage.store import ConcurrentUpdateError, SQLiteRunStore
+from agent_reliability_lab.storage.store import (
+    ConcurrentUpdateError,
+    SQLiteRunStore,
+    ToolResultRow,
+)
 
 
 def store_at(path: Path, secret_values: set[str] | None = None) -> SQLiteRunStore:
@@ -72,12 +76,20 @@ def test_store_persists_tool_results_approvals_and_evaluations(tmp_path: Path) -
     store.save_run(run)
 
     assert (
-        store.claim_tool_execution(run.id, "lookup-1", owner_token="worker-a").state
+        store.claim_tool_execution(
+            run.id,
+            "lookup-1",
+            owner_token="worker-a",
+            request_fingerprint="lookup-request",
+        ).state
         is ToolClaimState.CLAIMED
     )
     assert (
         store.claim_tool_execution(
-            run.id, "lookup-1", owner_token="worker-b"
+            run.id,
+            "lookup-1",
+            owner_token="worker-b",
+            request_fingerprint="lookup-request",
         ).owner_token
         == "worker-a"
     )
@@ -113,7 +125,12 @@ def test_tool_claim_allows_only_one_competing_worker_to_execute(tmp_path: Path) 
             pool.map(
                 lambda index: (
                     str(index),
-                    store.claim_tool_execution(run.id, "key-1", owner_token=str(index)),
+                    store.claim_tool_execution(
+                        run.id,
+                        "key-1",
+                        owner_token=str(index),
+                        request_fingerprint="key-request",
+                    ),
                 ),
                 range(8),
             )
@@ -180,16 +197,22 @@ def test_tool_claim_status_distinguishes_absent_claimed_completed_and_failed(
     store.save_run(run)
     absent = store.get_tool_claim(run.id, "key")
     assert absent.state is ToolClaimState.ABSENT
-    first = store.claim_tool_execution(run.id, "key", owner_token="one")
+    first = store.claim_tool_execution(
+        run.id, "key", owner_token="one", request_fingerprint="key-request"
+    )
     assert first.state is ToolClaimState.CLAIMED
     assert first.owner_token == "one"
     assert (
-        store.claim_tool_execution(run.id, "key", owner_token="two").owner_token
+        store.claim_tool_execution(
+            run.id, "key", owner_token="two", request_fingerprint="key-request"
+        ).owner_token
         == "one"
     )
     store.fail_tool_execution(run.id, "key", owner_token="one", error="network")
     assert store.get_tool_claim(run.id, "key").state is ToolClaimState.FAILED
-    second = store.claim_tool_execution(run.id, "key", owner_token="two")
+    second = store.claim_tool_execution(
+        run.id, "key", owner_token="two", request_fingerprint="key-request"
+    )
     store.complete_tool_result(run.id, "key", {"ok": True}, owner_token="two")
     assert second.owner_token == "two"
     assert store.get_tool_claim(run.id, "key").state is ToolClaimState.COMPLETED
@@ -208,14 +231,18 @@ def test_failed_result_serialization_releases_owned_claim(tmp_path: Path) -> Non
     run = Run.new("incident-timeout", "resilient")
     store.save_run(run)
     assert (
-        store.claim_tool_execution(run.id, "key", owner_token="one").owner_token
+        store.claim_tool_execution(
+            run.id, "key", owner_token="one", request_fingerprint="key-request"
+        ).owner_token
         == "one"
     )
     with pytest.raises(ValueError):
         store.complete_tool_result(run.id, "key", {"value": nan}, owner_token="one")
     assert store.get_tool_claim(run.id, "key").state is ToolClaimState.FAILED
     assert (
-        store.claim_tool_execution(run.id, "key", owner_token="two").owner_token
+        store.claim_tool_execution(
+            run.id, "key", owner_token="two", request_fingerprint="key-request"
+        ).owner_token
         == "two"
     )
 
@@ -273,3 +300,41 @@ def test_compatibility_save_tool_result_is_contention_safe(tmp_path: Path) -> No
     assert outcomes.count(True) == 1
     assert outcomes.count(False) == 11
     assert store.get_tool_result(run.id, "same-key") is not None
+
+
+def test_tool_claim_rejects_a_different_request_fingerprint(tmp_path: Path) -> None:
+    """A key reused for a different canonical request must report conflict."""
+    store = store_at(tmp_path / "fingerprint.db")
+    store.create_schema()
+    run = store.save_run(Run.new("incident-timeout", "resilient"))
+
+    first = store.claim_tool_execution(
+        run.id, "bound", owner_token="one", request_fingerprint="request-a"
+    )
+    conflict = store.claim_tool_execution(
+        run.id, "bound", owner_token="two", request_fingerprint="request-b"
+    )
+
+    assert first.state is ToolClaimState.CLAIMED
+    assert conflict.state is ToolClaimState.CONFLICT
+
+
+def test_cached_tool_result_is_sanitized_before_it_reaches_sqlite(
+    tmp_path: Path,
+) -> None:
+    """A cached secret must be redacted in both retrieval and raw SQLite storage."""
+    store = store_at(tmp_path / "sanitized-result.db", secret_values={"s3cr3t"})
+    store.create_schema()
+    run = store.save_run(Run.new("incident-timeout", "resilient"))
+    store.claim_tool_execution(
+        run.id, "secret", owner_token="worker", request_fingerprint="request"
+    )
+    store.complete_tool_result(
+        run.id, "secret", {"token": "s3cr3t"}, owner_token="worker"
+    )
+
+    assert store.get_tool_result(run.id, "secret") == {"token": "[REDACTED]"}
+    with store._session() as session:
+        row = session.get(ToolResultRow, (str(run.id), "secret"))
+    assert row is not None
+    assert "s3cr3t" not in (row.payload or "")

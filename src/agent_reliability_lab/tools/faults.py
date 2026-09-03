@@ -73,7 +73,14 @@ class FaultPlan:
     """A deterministic collection of explicit fault rules."""
 
     def __init__(self, rules: tuple[FaultRule, ...] = ()) -> None:
+        if any(not isinstance(rule, FaultRule) for rule in rules):
+            raise TypeError("FaultPlan rules must be FaultRule instances")
         self._rules = rules
+
+    @property
+    def rules(self) -> tuple[FaultRule, ...]:
+        """Expose the immutable, already runtime-validated rule set."""
+        return self._rules
 
     def fault_for(self, tool_name: str, attempt: int) -> FaultEvent | None:
         """Return the first matching deterministic fault."""

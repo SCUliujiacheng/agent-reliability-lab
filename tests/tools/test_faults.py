@@ -4,6 +4,7 @@ import pytest
 
 from agent_reliability_lab.tools.faults import (
     FaultKind,
+    FaultPlan,
     FaultRule,
     InjectedFault,
     no_faults,
@@ -38,3 +39,14 @@ def test_injected_fault_exposes_a_typed_transient_error() -> None:
 
     assert fault.code == "tool_timeout"
     assert fault.transient is True
+
+
+def test_fault_plan_rejects_non_rules_before_a_gateway_attempt() -> None:
+    """An arbitrary object in a fault plan must not fail midway through execution."""
+    with pytest.raises(TypeError, match="FaultRule"):
+        FaultPlan((object(),))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError):
+        FaultRule(tool_name="search_recent_logs", attempt=0, kind="timeout")
+    with pytest.raises(ValueError):
+        FaultRule(tool_name="search_recent_logs", attempt=1, kind="not-a-kind")

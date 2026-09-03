@@ -59,6 +59,15 @@ class ToolClaimState(StrEnum):
     CLAIMED = "claimed"
     COMPLETED = "completed"
     FAILED = "failed"
+    CONFLICT = "conflict"
+
+
+class ToolFailureDisposition(StrEnum):
+    """Whether a failed claimed operation may ever be reacquired."""
+
+    RETRYABLE = "retryable"
+    TERMINAL = "terminal"
+    INDETERMINATE = "indeterminate"
 
 
 class ToolClaim(BaseModel):
@@ -70,3 +79,5 @@ class ToolClaim(BaseModel):
     owner_token: str | None = None
     result: JsonValue | None = None
     error: str | None = None
+    request_fingerprint: str | None = None
+    failure_disposition: ToolFailureDisposition | None = None

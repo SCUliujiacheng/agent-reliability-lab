@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_reliability_lab.config import Settings
@@ -11,8 +12,17 @@ from agent_reliability_lab.domain.actions import CallToolAction
 from agent_reliability_lab.domain.runs import Run
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
-from agent_reliability_lab.tools.contracts import ToolDefinition, ToolRegistry
-from agent_reliability_lab.tools.faults import no_faults, timeout_on_attempt
+from agent_reliability_lab.tools.contracts import (
+    ToolDefinition,
+    ToolExecutionContext,
+    ToolRegistry,
+)
+from agent_reliability_lab.tools.faults import (
+    FaultPlan,
+    FaultRule,
+    no_faults,
+    timeout_on_attempt,
+)
 from agent_reliability_lab.tools.gateway import PermanentToolError, ToolGateway
 from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
 
@@ -113,12 +123,12 @@ def test_permanent_error_is_not_retried_and_output_is_validated(tmp_path: Path) 
 
     calls = 0
 
-    async def permanent(_: Input) -> Output:
+    async def permanent(_: Input, __: ToolExecutionContext) -> Output:
         nonlocal calls
         calls += 1
         raise PermanentToolError("bad_request", "never retry")
 
-    async def malformed(_: Input) -> dict[str, str]:
+    async def malformed(_: Input, __: ToolExecutionContext) -> dict[str, str]:
         return {"wrong": "shape"}
 
     registry = ToolRegistry()
@@ -172,7 +182,7 @@ def test_call_is_async_and_enforces_handler_timeout(tmp_path: Path) -> None:
         model_config = ConfigDict(extra="forbid")
         answer: str
 
-    async def slow(_: Input) -> Output:
+    async def slow(_: Input, __: ToolExecutionContext) -> Output:
         await asyncio.sleep(0.02)
         return Output(answer="late")
 
@@ -193,3 +203,209 @@ def test_call_is_async_and_enforces_handler_timeout(tmp_path: Path) -> None:
     assert result.status == "failed"
     assert result.error_code == "tool_timeout"
     assert result.attempts == 1
+
+
+def test_high_risk_write_rejects_a_missing_idempotency_key(tmp_path: Path) -> None:
+    """A write without a durable key can run twice and must be rejected first."""
+    gateway, run = _gateway(tmp_path)
+    gateway.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
+
+    result = gateway.call_sync(
+        run, _call("prepare_rollback", deployment_id="deploy-2026-09-04-001")
+    )
+
+    assert result.error_code == "idempotency_key_required"
+    assert gateway.incident_backend.rollback_preparations == 0
+    assert gateway.events == []
+
+
+def test_write_and_high_risk_definitions_must_declare_idempotency() -> None:
+    """Registry contracts must not permit an accidentally replayable write."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Input, __: ToolExecutionContext) -> Output:
+        return Output()
+
+    with pytest.raises(ValueError, match="idempotent"):
+        ToolDefinition("write", Input, Output, handler, is_write=True)
+    with pytest.raises(ValueError, match="idempotent"):
+        ToolDefinition("high", Input, Output, handler, requires_approval=True)
+
+
+def test_concurrent_high_risk_write_executes_once(tmp_path: Path) -> None:
+    """Two gateway instances must share the durable write claim."""
+    first, run = _gateway(tmp_path)
+    second = ToolGateway(
+        first.store,
+        TraceRecorder(first.store),
+        incident_registry(first.incident_backend),
+        incident_backend=first.incident_backend,
+    )
+    first.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
+    action = _call(
+        "prepare_rollback",
+        key="concurrent-rollback",
+        deployment_id="deploy-2026-09-04-001",
+    )
+
+    async def invoke() -> list[object]:
+        return await asyncio.gather(first.call(run, action), second.call(run, action))
+
+    results = asyncio.run(invoke())
+
+    assert {result.status for result in results} <= {"succeeded", "failed"}
+    assert first.incident_backend.rollback_preparations == 1
+
+
+def test_side_effect_before_invalid_output_is_not_replayed(tmp_path: Path) -> None:
+    """An uncertain write result must be terminal under its original key."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        value: str
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        answer: str
+
+    mutations: list[str] = []
+
+    async def unsafe_write(_: Input, context: ToolExecutionContext) -> dict[str, str]:
+        mutations.append(context.idempotency_token)
+        return {"wrong": "output"}
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            "unsafe_write", Input, Output, unsafe_write, is_write=True, idempotent=True
+        )
+    )
+    settings = Settings(data_dir=tmp_path, database_path=tmp_path / "unsafe.db")
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    run = store.save_run(Run.new("unsafe", "resilient"))
+    gateway = ToolGateway(store, TraceRecorder(store), registry)
+    action = _call("unsafe_write", key="once", value="x")
+
+    first = gateway.call_sync(run, action)
+    second = gateway.call_sync(run, action)
+
+    assert first.error_code == "invalid_output"
+    assert second.error_code == "idempotency_indeterminate"
+    assert mutations == ["once"]
+
+
+def test_cancelled_read_claim_is_released_and_can_recover(tmp_path: Path) -> None:
+    """Cancellation must not strand an owned read claim forever."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        value: str
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        answer: str
+
+    started = asyncio.Event()
+    calls = 0
+
+    async def cancellable(_: Input, __: ToolExecutionContext) -> Output:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            started.set()
+            await asyncio.Event().wait()
+        return Output(answer="recovered")
+
+    registry = ToolRegistry()
+    registry.register(ToolDefinition("cancellable", Input, Output, cancellable))
+    settings = Settings(data_dir=tmp_path, database_path=tmp_path / "cancel.db")
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    run = store.save_run(Run.new("cancel", "resilient"))
+    gateway = ToolGateway(store, TraceRecorder(store), registry)
+    action = _call("cancellable", key="recover", value="x")
+
+    async def cancel_then_retry() -> object:
+        task = asyncio.create_task(gateway.call(run, action))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return await gateway.call(run, action)
+
+    recovered = asyncio.run(cancel_then_retry())
+
+    assert recovered.status == "succeeded"
+    assert calls == 2
+    cancelled = [
+        event
+        for event in gateway.events
+        if event.event_type == "tool.attempt.cancelled"
+    ]
+    assert len(cancelled) == 1
+    assert cancelled[0].status == "error"
+
+
+def test_idempotency_key_conflicts_on_changed_tool_or_arguments(tmp_path: Path) -> None:
+    """One key must never return a cache entry for a different request."""
+    gateway, run = _gateway(tmp_path)
+    gateway.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
+
+    first = gateway.call_sync(
+        run,
+        _call(
+            "prepare_rollback",
+            key="bound",
+            deployment_id="deploy-2026-09-04-001",
+        ),
+    )
+    tool_mismatch = gateway.call_sync(run, _call("get_service_health", key="bound"))
+    args_mismatch = gateway.call_sync(
+        run,
+        _call(
+            "prepare_rollback",
+            key="bound",
+            deployment_id="deploy-2026-09-04-002",
+        ),
+    )
+
+    assert first.status == "succeeded"
+    assert tool_mismatch.error_code == "idempotency_conflict"
+    assert args_mismatch.error_code == "idempotency_conflict"
+
+
+def test_attempt_events_share_span_parent_and_terminal_status(tmp_path: Path) -> None:
+    """A trace that splits one attempt across spans cannot be causally audited."""
+    gateway, run = _gateway(tmp_path)
+    gateway.call_sync(
+        run,
+        _call("search_recent_logs"),
+        timeout_on_attempt(1, tool_name="search_recent_logs"),
+    )
+
+    first_attempt = gateway.events[:3]
+    second_attempt = gateway.events[3:]
+    assert {event.span_id for event in first_attempt} == {first_attempt[0].span_id}
+    assert {event.span_id for event in second_attempt} == {second_attempt[0].span_id}
+    assert first_attempt[0].parent_span_id == run.trace_id
+    assert first_attempt[-1].status == "error"
+    assert second_attempt[-1].status == "ok"
+
+
+def test_unknown_fault_tool_is_rejected_before_execution(tmp_path: Path) -> None:
+    """A typo in a deterministic fault plan must not be silently ignored."""
+    gateway, run = _gateway(tmp_path)
+    faults = FaultPlan(
+        (FaultRule(tool_name="does_not_exist", attempt=1, kind="timeout"),)
+    )
+
+    result = gateway.call_sync(run, _call("search_recent_logs"), faults)
+
+    assert result.error_code == "invalid_fault_plan"
+    assert gateway.events == []

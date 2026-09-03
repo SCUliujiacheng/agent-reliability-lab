@@ -23,7 +23,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.runs import Run
-from agent_reliability_lab.storage.models import ToolClaim, ToolClaimState, TraceEvent
+from agent_reliability_lab.storage.models import (
+    ToolClaim,
+    ToolClaimState,
+    ToolFailureDisposition,
+    TraceEvent,
+)
 from agent_reliability_lab.storage.sanitization import sanitize_payload
 
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -73,8 +78,10 @@ class ToolResultRow(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), primary_key=True)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
     owner_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class ApprovalRow(Base):
@@ -232,9 +239,17 @@ class SQLiteRunStore:
             return _tool_claim(row)
 
     def claim_tool_execution(
-        self, run_id: UUID, idempotency_key: str, *, owner_token: str
+        self,
+        run_id: UUID,
+        idempotency_key: str,
+        *,
+        owner_token: str,
+        request_fingerprint: str,
+        allow_reclaim: bool = True,
     ) -> ToolClaim:
-        """Atomically acquire absent/failed work, or return the existing status."""
+        """Atomically acquire matching retryable work, never a different request."""
+        if not request_fingerprint:
+            raise ValueError("request_fingerprint is required")
         with self._session.begin() as session:
             result = cast(
                 CursorResult[Any],
@@ -245,14 +260,29 @@ class SQLiteRunStore:
                         idempotency_key=idempotency_key,
                         state="claimed",
                         owner_token=owner_token,
+                        request_fingerprint=request_fingerprint,
                     )
                     .on_conflict_do_nothing()
                 ),
             )
             if result.rowcount == 1:
-                return ToolClaim(state=ToolClaimState.CLAIMED, owner_token=owner_token)
+                return ToolClaim(
+                    state=ToolClaimState.CLAIMED,
+                    owner_token=owner_token,
+                    request_fingerprint=request_fingerprint,
+                )
             row = session.get(ToolResultRow, (str(run_id), idempotency_key))
-            if row is not None and row.state == ToolClaimState.FAILED:
+            if row is not None and row.request_fingerprint != request_fingerprint:
+                return ToolClaim(
+                    state=ToolClaimState.CONFLICT,
+                    request_fingerprint=row.request_fingerprint,
+                )
+            if (
+                row is not None
+                and row.state == ToolClaimState.FAILED
+                and row.failure_disposition == ToolFailureDisposition.RETRYABLE
+                and allow_reclaim
+            ):
                 reclaimed = cast(
                     CursorResult[Any],
                     session.execute(
@@ -261,12 +291,15 @@ class SQLiteRunStore:
                             ToolResultRow.run_id == str(run_id),
                             ToolResultRow.idempotency_key == idempotency_key,
                             ToolResultRow.state == ToolClaimState.FAILED,
+                            ToolResultRow.failure_disposition
+                            == ToolFailureDisposition.RETRYABLE,
                         )
                         .values(
                             state=ToolClaimState.CLAIMED,
                             owner_token=owner_token,
                             payload=None,
                             error=None,
+                            failure_disposition=None,
                         )
                     ),
                 )
@@ -282,7 +315,7 @@ class SQLiteRunStore:
     ) -> None:
         """Complete a claim only when its owning worker still controls it."""
         try:
-            payload = _dump(result)
+            payload = _dump(sanitize_payload(result, self._secret_values))
         except (TypeError, ValueError):
             self.fail_tool_execution(
                 run_id,
@@ -311,9 +344,15 @@ class SQLiteRunStore:
                 )
 
     def fail_tool_execution(
-        self, run_id: UUID, idempotency_key: str, *, owner_token: str, error: str
+        self,
+        run_id: UUID,
+        idempotency_key: str,
+        *,
+        owner_token: str,
+        error: str,
+        disposition: ToolFailureDisposition = ToolFailureDisposition.RETRYABLE,
     ) -> None:
-        """Mark the owner's claim failed so a later worker may reclaim it."""
+        """Mark a claim with the explicit safety disposition for later callers."""
         with self._session.begin() as session:
             released = cast(
                 CursorResult[Any],
@@ -325,7 +364,11 @@ class SQLiteRunStore:
                         ToolResultRow.state == ToolClaimState.CLAIMED,
                         ToolResultRow.owner_token == owner_token,
                     )
-                    .values(state=ToolClaimState.FAILED, error=error)
+                    .values(
+                        state=ToolClaimState.FAILED,
+                        error=error,
+                        failure_disposition=disposition,
+                    )
                 ),
             )
             if released.rowcount != 1:
@@ -337,7 +380,10 @@ class SQLiteRunStore:
         """Compatibility helper that saves only when this caller wins the claim."""
         owner_token = uuid4().hex
         claim = self.claim_tool_execution(
-            run_id, idempotency_key, owner_token=owner_token
+            run_id,
+            idempotency_key,
+            owner_token=owner_token,
+            request_fingerprint=f"compatibility:{idempotency_key}",
         )
         if (
             claim.state is not ToolClaimState.CLAIMED
@@ -443,6 +489,10 @@ def _tool_claim(row: ToolResultRow | None) -> ToolClaim:
         owner_token=row.owner_token,
         result=_load(row.payload) if row.payload is not None else None,
         error=row.error,
+        request_fingerprint=row.request_fingerprint,
+        failure_disposition=ToolFailureDisposition(row.failure_disposition)
+        if row.failure_disposition is not None
+        else None,
     )
 
 
