@@ -358,3 +358,44 @@ async def test_provider_failure_categories_are_traced_and_redacted(
     assert len(failed) == 1
     assert failed[0].payload["code"] == expected_code
     assert "failure-secret" not in json.dumps(failed[0].payload)
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_never_persists_environment_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default tracing must be safe even when an error body reflects credentials."""
+    api_key = "environment-only-provider-key"
+    monkeypatch.setenv("TEST_PROVIDER_KEY", api_key)
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / "default-recorder.db")
+    )
+    store.create_schema()
+    run = store.save_run(Run.new("scenario", "resilient"))
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(
+            503,
+            text=f"authorization: Bearer {api_key}",
+        )
+    )
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        policy = OpenAICompatiblePolicy(
+            config(), client=client, recorder=TraceRecorder(store)
+        )
+        with pytest.raises(ProviderError):
+            await policy.next_action(run, scenario())
+
+    events = store.list_events(run.trace_id)
+    serialized = json.dumps(
+        [event.model_dump(mode="json") for event in events], sort_keys=True
+    )
+    assert api_key not in serialized
+    assert "authorization" not in serialized.lower()
+    assert "bearer" not in serialized.lower()
+    failed = [event for event in events if event.event_type == "provider.failed"]
+    assert failed[0].payload == {
+        "code": "provider_http_status",
+        "status_code": 503,
+        "exception_type": "HTTPStatusError",
+    }

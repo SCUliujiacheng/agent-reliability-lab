@@ -40,6 +40,7 @@ class DurableOrchestrator:
                     update={"pending_approval": False}
                 ),
                 previous=run,
+                owner_token=owner_token,
             )
             self._record(
                 run,
@@ -55,7 +56,6 @@ class DurableOrchestrator:
 
         faults = _scenario_fault_plan(scenario)
         while run.status is RunStatus.RUNNING:
-            run = self._store.claim_run_execution(run.id, owner_token=owner_token)
             action: AgentAction
             if run.pending_action is not None:
                 action = run.pending_action
@@ -66,7 +66,10 @@ class DurableOrchestrator:
                     raise
                 except Exception as error:  # noqa: BLE001
                     run = self._terminal_failure(
-                        run, "policy_error", type(error).__name__
+                        run,
+                        "policy_error",
+                        type(error).__name__,
+                        owner_token=owner_token,
                     )
                     break
 
@@ -84,12 +87,16 @@ class DurableOrchestrator:
                         },
                     }
                 )
-                run = self._save(terminal, previous=run)
+                run = self._save(terminal, previous=run, owner_token=owner_token)
                 self._record(run, "run.succeeded", cast(JsonValue, run.result or {}))
                 break
             if isinstance(action, FailAction):
                 run = self._terminal_failure(
-                    run, action.code, action.explanation, next_step=True
+                    run,
+                    action.code,
+                    action.explanation,
+                    owner_token=owner_token,
+                    next_step=True,
                 )
                 break
 
@@ -99,7 +106,9 @@ class DurableOrchestrator:
             )
             if failure is not None:
                 run = self._terminal_failure(
-                    run, failure.error_code or "tool_preflight_failed"
+                    run,
+                    failure.error_code or "tool_preflight_failed",
+                    owner_token=owner_token,
                 )
                 break
 
@@ -116,7 +125,7 @@ class DurableOrchestrator:
                             "pending_action_fingerprint": fingerprint,
                         }
                     )
-                    run = self._save(paused, previous=run)
+                    run = self._save(paused, previous=run, owner_token=owner_token)
                     self._record(
                         run,
                         "run.waiting_approval",
@@ -128,16 +137,22 @@ class DurableOrchestrator:
                     )
                     break
                 if approval["action_fingerprint"] != fingerprint:
-                    run = self._terminal_failure(run, "approval_mismatch")
+                    run = self._terminal_failure(
+                        run, "approval_mismatch", owner_token=owner_token
+                    )
                     break
                 if approval["allow"] is not True:
-                    run = self._terminal_failure(run, "approval_denied")
+                    run = self._terminal_failure(
+                        run, "approval_denied", owner_token=owner_token
+                    )
                     break
 
             result = await self._gateway.call(run, action, faults)
             if result.status == "failed":
                 run = self._terminal_failure(
-                    run, result.error_code or "tool_execution_failed"
+                    run,
+                    result.error_code or "tool_execution_failed",
+                    owner_token=owner_token,
                 )
                 break
             prior_results = run.context.get("tool_results", {})
@@ -155,7 +170,7 @@ class DurableOrchestrator:
                     "updated_at": datetime.now(UTC),
                 }
             )
-            run = self._save(checkpoint, previous=run)
+            run = self._save(checkpoint, previous=run, owner_token=owner_token)
             self._record(
                 run,
                 "run.checkpointed",
@@ -169,6 +184,7 @@ class DurableOrchestrator:
         code: str,
         explanation: str | None = None,
         *,
+        owner_token: str,
         next_step: bool = False,
     ) -> Run:
         payload: dict[str, JsonValue] = {"code": code}
@@ -183,12 +199,16 @@ class DurableOrchestrator:
                 "result": payload,
             }
         )
-        saved = self._save(terminal, previous=run)
+        saved = self._save(terminal, previous=run, owner_token=owner_token)
         self._record(saved, "run.failed", payload, status="error")
         return saved
 
-    def _save(self, changed: Run, *, previous: Run) -> Run:
-        return self._store.save_run(changed, expected_version=previous.version)
+    def _save(self, changed: Run, *, previous: Run, owner_token: str) -> Run:
+        return self._store.save_run_owned(
+            changed,
+            owner_token=owner_token,
+            expected_version=previous.version,
+        )
 
     def _record(
         self,

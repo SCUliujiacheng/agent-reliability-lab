@@ -1,6 +1,7 @@
 """Application service for starting, approving, and resuming durable runs."""
 
-from collections.abc import Callable, Mapping
+import asyncio
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Literal, cast
 from uuid import UUID, uuid4
 
@@ -16,6 +17,7 @@ from agent_reliability_lab.telemetry.recorder import TraceRecorder
 from agent_reliability_lab.tools.gateway import ToolGateway
 
 ScenarioLoader = Callable[[str], Scenario]
+HeartbeatSleeper = Callable[[float], Awaitable[None]]
 
 
 class RunNotFoundError(LookupError):
@@ -37,6 +39,8 @@ class RunService:
         scenario_loader: ScenarioLoader,
         *,
         policies: Mapping[str, Policy] | None = None,
+        heartbeat_interval_seconds: float | None = None,
+        heartbeat_sleeper: HeartbeatSleeper = asyncio.sleep,
     ) -> None:
         self.store = store
         self._recorder = recorder
@@ -45,6 +49,11 @@ class RunService:
         configured = dict(policies or {})
         configured.setdefault("scripted", ScriptedPolicy())
         self._policies = configured
+        interval = heartbeat_interval_seconds or store.run_lease_seconds / 3
+        if interval <= 0 or interval >= store.run_lease_seconds:
+            raise ValueError("heartbeat interval must be inside the run lease")
+        self._heartbeat_interval_seconds = interval
+        self._heartbeat_sleeper = heartbeat_sleeper
 
     @property
     def policy(self) -> Policy:
@@ -154,37 +163,63 @@ class RunService:
     async def _execute_owned(self, run: Run, scenario: Scenario, policy: Policy) -> Run:
         owner_token = uuid4().hex
         claimed = self.store.claim_run_execution(run.id, owner_token=owner_token)
+        heartbeat = asyncio.create_task(
+            self._heartbeat(run.id, owner_token=owner_token)
+        )
+        primary_error: BaseException | None = None
         try:
             await DurableOrchestrator(
                 self.store, self._recorder, self._gateway, policy
             ).execute(claimed, scenario, owner_token=owner_token)
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
-            released = self.store.release_run_execution(run.id, owner_token=owner_token)
+            heartbeat.cancel()
+            heartbeat_error = await _stopped_heartbeat_error(heartbeat)
+            try:
+                released = self.store.release_run_execution(
+                    run.id, owner_token=owner_token
+                )
+            except RunExecutionConflictError:
+                if primary_error is None and heartbeat_error is None:
+                    raise
+            if primary_error is None and heartbeat_error is not None:
+                raise heartbeat_error
         return released
+
+    async def _heartbeat(self, run_id: UUID, *, owner_token: str) -> None:
+        while True:
+            await self._heartbeat_sleeper(self._heartbeat_interval_seconds)
+            self.store.renew_run_execution(run_id, owner_token=owner_token)
 
     def _deny(self, run: Run, *, actor: str, reason: str | None) -> Run:
         owner_token = uuid4().hex
         owned = self.store.claim_run_execution(run.id, owner_token=owner_token)
-        if owned.status is RunStatus.WAITING_APPROVAL:
-            owned = self.store.save_run(
-                owned.transition(RunStatus.FAILED).model_copy(
-                    update={
-                        "pending_approval": False,
-                        "pending_action": None,
-                        "pending_action_fingerprint": None,
-                        "result": {"code": "approval_denied", "reason": reason},
-                    }
-                ),
-                expected_version=owned.version,
+        try:
+            if owned.status is RunStatus.WAITING_APPROVAL:
+                owned = self.store.save_run_owned(
+                    owned.transition(RunStatus.FAILED).model_copy(
+                        update={
+                            "pending_approval": False,
+                            "pending_action": None,
+                            "pending_action_fingerprint": None,
+                            "result": {"code": "approval_denied", "reason": reason},
+                        }
+                    ),
+                    owner_token=owner_token,
+                    expected_version=owned.version,
+                )
+            self._recorder.record(
+                owned.trace_id,
+                "approval.denied",
+                {"actor": actor, "reason": reason},
+                parent_span_id=owned.trace_id,
+                status="error",
             )
-        self._recorder.record(
-            owned.trace_id,
-            "approval.denied",
-            {"actor": actor, "reason": reason},
-            parent_span_id=owned.trace_id,
-            status="error",
-        )
-        return self.store.release_run_execution(run.id, owner_token=owner_token)
+        finally:
+            released = self.store.release_run_execution(run.id, owner_token=owner_token)
+        return released
 
     def _required(self, run_id: UUID) -> Run:
         run = self.store.get_run(run_id)
@@ -206,6 +241,18 @@ class RunService:
             parent_span_id=run.trace_id,
             status="error",
         )
+
+
+async def _stopped_heartbeat_error(
+    heartbeat: asyncio.Task[None],
+) -> BaseException | None:
+    try:
+        await heartbeat
+    except asyncio.CancelledError:
+        return None
+    except Exception as error:  # noqa: BLE001 - preserve heartbeat task failures.
+        return error
+    return None
 
 
 __all__ = ["RunConflictError", "RunNotFoundError", "RunService"]

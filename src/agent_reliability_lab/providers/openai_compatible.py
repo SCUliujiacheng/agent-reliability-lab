@@ -178,10 +178,18 @@ class OpenAICompatiblePolicy:
                         self._url, json=body, headers=headers, timeout=timeout
                     )
         except httpx.TimeoutException as error:
-            self._failed(run, "provider_timeout", {"error": str(error)})
+            self._failed(
+                run,
+                "provider_timeout",
+                {"exception_type": type(error).__name__},
+            )
             raise ProviderTimeoutError("provider request timed out") from error
         except httpx.RequestError as error:
-            self._failed(run, "provider_transport", {"error": str(error)})
+            self._failed(
+                run,
+                "provider_transport",
+                {"exception_type": type(error).__name__},
+            )
             raise ProviderTransportError("provider transport failed") from error
 
         try:
@@ -192,7 +200,7 @@ class OpenAICompatiblePolicy:
                 "provider_http_status",
                 {
                     "status_code": response.status_code,
-                    "response": response.text,
+                    "exception_type": type(error).__name__,
                 },
             )
             raise ProviderHTTPStatusError(
@@ -207,7 +215,7 @@ class OpenAICompatiblePolicy:
             self._failed(
                 run,
                 "provider_protocol",
-                {"response": response.text},
+                {"exception_type": type(error).__name__},
             )
             raise ProviderProtocolError(
                 "provider did not return one valid structured action"

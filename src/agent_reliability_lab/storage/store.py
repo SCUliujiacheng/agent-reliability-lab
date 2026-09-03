@@ -14,8 +14,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    delete,
     event,
     func,
+    or_,
     select,
     update,
 )
@@ -54,6 +56,13 @@ class RunRow(Base):
     trace_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class RunExecutionLeaseRow(Base):
+    __tablename__ = "run_execution_leases"
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    owner_token: Mapped[str] = mapped_column(String(128), nullable=False)
+    lease_expires_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
 class TraceCounterRow(Base):
@@ -159,12 +168,19 @@ class SQLiteRunStore:
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
 
+    @property
+    def run_lease_seconds(self) -> float:
+        """Expose the lease bound so runtime heartbeat cadence stays inside it."""
+        return self._run_lease_seconds
+
     def save_run(self, run: Run, *, expected_version: int | None = None) -> Run:
         """Persist and return the canonical immutable run carrying its DB version."""
         with self._session.begin() as session:
             existing = session.get(RunRow, str(run.id))
             if existing is None:
-                persisted = run.model_copy(update={"version": 1})
+                persisted = _without_execution_lease(
+                    run.model_copy(update={"version": 1})
+                )
                 session.add(
                     RunRow(
                         id=str(run.id),
@@ -173,12 +189,14 @@ class SQLiteRunStore:
                         payload=_dump(persisted),
                     )
                 )
-                return persisted
+                return _with_execution_lease(persisted, None)
             if expected_version is None:
                 raise ConcurrentUpdateError(
                     "expected_version is required to update a run"
                 )
-            persisted = run.model_copy(update={"version": expected_version + 1})
+            persisted = _without_execution_lease(
+                run.model_copy(update={"version": expected_version + 1})
+            )
             result = cast(
                 CursorResult[Any],
                 session.execute(
@@ -193,12 +211,64 @@ class SQLiteRunStore:
             )
             if result.rowcount != 1:
                 raise ConcurrentUpdateError("stale run version")
-            return persisted
+            lease = session.get(RunExecutionLeaseRow, str(run.id))
+            return _with_execution_lease(persisted, lease)
+
+    def save_run_owned(
+        self,
+        run: Run,
+        *,
+        owner_token: str,
+        expected_version: int,
+    ) -> Run:
+        """Checkpoint only while the caller still owns an unexpired lease."""
+        now = self._aware_now().isoformat()
+        persisted = _without_execution_lease(
+            run.model_copy(update={"version": expected_version + 1})
+        )
+        valid_lease = (
+            select(RunExecutionLeaseRow.run_id)
+            .where(
+                RunExecutionLeaseRow.run_id == str(run.id),
+                RunExecutionLeaseRow.owner_token == owner_token,
+                RunExecutionLeaseRow.lease_expires_at > now,
+            )
+            .exists()
+        )
+        with self._session.begin() as session:
+            changed = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(RunRow)
+                    .where(
+                        RunRow.id == str(run.id),
+                        RunRow.version == expected_version,
+                        valid_lease,
+                    )
+                    .values(
+                        payload=_dump(persisted),
+                        trace_id=str(run.trace_id),
+                        version=expected_version + 1,
+                    )
+                ),
+            )
+            if changed.rowcount != 1:
+                lease = session.get(RunExecutionLeaseRow, str(run.id))
+                if not _lease_is_owned(lease, owner_token, now):
+                    raise RunExecutionConflictError(
+                        "run execution ownership lost at checkpoint"
+                    )
+                raise ConcurrentUpdateError("stale run version")
+            lease = session.get(RunExecutionLeaseRow, str(run.id))
+            return _with_execution_lease(persisted, lease)
 
     def get_run(self, run_id: UUID) -> Run | None:
         with self._session() as session:
             row = session.get(RunRow, str(run_id))
-            return Run.model_validate_json(row.payload) if row is not None else None
+            if row is None:
+                return None
+            lease = session.get(RunExecutionLeaseRow, str(run_id))
+            return _with_execution_lease(Run.model_validate_json(row.payload), lease)
 
     def list_runs(self, *, limit: int = 100) -> list[Run]:
         """Return recent canonical runs in deterministic newest-first order."""
@@ -213,75 +283,98 @@ class SQLiteRunStore:
                 )
                 .limit(limit)
             )
-            return [Run.model_validate_json(row.payload) for row in rows]
+            return [
+                _with_execution_lease(
+                    Run.model_validate_json(row.payload),
+                    session.get(RunExecutionLeaseRow, row.id),
+                )
+                for row in rows
+            ]
 
     def claim_run_execution(self, run_id: UUID, *, owner_token: str) -> Run:
         """CAS-acquire or renew a bounded execution lease for one durable run."""
         if not owner_token:
             raise ValueError("owner_token is required")
         now = self._aware_now()
-        lease_expires_at = now + timedelta(seconds=self._run_lease_seconds)
+        lease_expires_at = (
+            now + timedelta(seconds=self._run_lease_seconds)
+        ).isoformat()
         with self._session.begin() as session:
             row = session.get(RunRow, str(run_id))
             if row is None:
                 raise LookupError(f"run not found: {run_id}")
-            run = Run.model_validate_json(row.payload)
-            if (
-                run.execution_owner is not None
-                and run.execution_owner != owner_token
-                and run.execution_lease_expires_at is not None
-                and run.execution_lease_expires_at > now
-            ):
-                raise RunExecutionConflictError("run has a live owner")
-            claimed = run.model_copy(
-                update={
-                    "execution_owner": owner_token,
-                    "execution_lease_expires_at": lease_expires_at,
-                    "updated_at": now,
-                    "version": run.version + 1,
-                }
-            )
             changed = cast(
                 CursorResult[Any],
                 session.execute(
-                    update(RunRow)
-                    .where(RunRow.id == str(run_id), RunRow.version == run.version)
-                    .values(version=claimed.version, payload=_dump(claimed))
+                    insert(RunExecutionLeaseRow)
+                    .values(
+                        run_id=str(run_id),
+                        owner_token=owner_token,
+                        lease_expires_at=lease_expires_at,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=[RunExecutionLeaseRow.run_id],
+                        set_={
+                            "owner_token": owner_token,
+                            "lease_expires_at": lease_expires_at,
+                        },
+                        where=or_(
+                            RunExecutionLeaseRow.owner_token == owner_token,
+                            RunExecutionLeaseRow.lease_expires_at <= now.isoformat(),
+                        ),
+                    )
                 ),
             )
             if changed.rowcount != 1:
-                raise ConcurrentUpdateError("stale run execution claim")
-            return claimed
+                raise RunExecutionConflictError("run has a live owner")
+            lease = session.get(RunExecutionLeaseRow, str(run_id))
+            return _with_execution_lease(Run.model_validate_json(row.payload), lease)
+
+    def renew_run_execution(self, run_id: UUID, *, owner_token: str) -> Run:
+        """Atomically extend only the caller's existing execution lease."""
+        if not owner_token:
+            raise ValueError("owner_token is required")
+        lease_expires_at = (
+            self._aware_now() + timedelta(seconds=self._run_lease_seconds)
+        ).isoformat()
+        with self._session.begin() as session:
+            changed = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(RunExecutionLeaseRow)
+                    .where(
+                        RunExecutionLeaseRow.run_id == str(run_id),
+                        RunExecutionLeaseRow.owner_token == owner_token,
+                    )
+                    .values(lease_expires_at=lease_expires_at)
+                ),
+            )
+            if changed.rowcount != 1:
+                raise RunExecutionConflictError("run execution ownership was lost")
+            row = session.get(RunRow, str(run_id))
+            if row is None:
+                raise LookupError(f"run not found: {run_id}")
+            lease = session.get(RunExecutionLeaseRow, str(run_id))
+            return _with_execution_lease(Run.model_validate_json(row.payload), lease)
 
     def release_run_execution(self, run_id: UUID, *, owner_token: str) -> Run:
         """CAS-release only the execution lease owned by this worker."""
-        now = self._aware_now()
         with self._session.begin() as session:
             row = session.get(RunRow, str(run_id))
             if row is None:
                 raise LookupError(f"run not found: {run_id}")
-            run = Run.model_validate_json(row.payload)
-            if run.execution_owner != owner_token:
-                raise RunExecutionConflictError("run execution is not owned by worker")
-            released = run.model_copy(
-                update={
-                    "execution_owner": None,
-                    "execution_lease_expires_at": None,
-                    "updated_at": now,
-                    "version": run.version + 1,
-                }
-            )
             changed = cast(
                 CursorResult[Any],
                 session.execute(
-                    update(RunRow)
-                    .where(RunRow.id == str(run_id), RunRow.version == run.version)
-                    .values(version=released.version, payload=_dump(released))
+                    delete(RunExecutionLeaseRow).where(
+                        RunExecutionLeaseRow.run_id == str(run_id),
+                        RunExecutionLeaseRow.owner_token == owner_token,
+                    )
                 ),
             )
             if changed.rowcount != 1:
-                raise ConcurrentUpdateError("stale run execution release")
-            return released
+                raise RunExecutionConflictError("run execution is not owned by worker")
+            return _with_execution_lease(Run.model_validate_json(row.payload), None)
 
     def append_event(self, event_value: TraceEvent) -> TraceEvent:
         """Allocate a unique trace sequence and persist a sanitized event."""
@@ -728,6 +821,35 @@ def _tool_claim(row: ToolResultRow | None) -> ToolClaim:
         lease_expires_at=datetime.fromisoformat(row.lease_expires_at)
         if row.lease_expires_at is not None
         else None,
+    )
+
+
+def _without_execution_lease(run: Run) -> Run:
+    return run.model_copy(
+        update={"execution_owner": None, "execution_lease_expires_at": None}
+    )
+
+
+def _with_execution_lease(run: Run, lease: RunExecutionLeaseRow | None) -> Run:
+    if lease is None:
+        return _without_execution_lease(run)
+    return run.model_copy(
+        update={
+            "execution_owner": lease.owner_token,
+            "execution_lease_expires_at": datetime.fromisoformat(
+                lease.lease_expires_at
+            ),
+        }
+    )
+
+
+def _lease_is_owned(
+    lease: RunExecutionLeaseRow | None, owner_token: str, now: str
+) -> bool:
+    return (
+        lease is not None
+        and lease.owner_token == owner_token
+        and lease.lease_expires_at > now
     )
 
 
