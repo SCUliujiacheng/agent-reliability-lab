@@ -130,12 +130,12 @@ def test_run_save_uses_compare_and_swap_versioning(tmp_path: Path) -> None:
     store = store_at(tmp_path / "runs.db")
     store.create_schema()
     run = Run.new("incident-timeout", "resilient")
-    version = store.save_run(run)
-    changed = run.transition("running")
+    persisted = store.save_run(run)
+    changed = persisted.transition("running")
 
-    assert store.save_run(changed, expected_version=version) == version + 1
+    assert store.save_run(changed, expected_version=persisted.version).version == 2
     with pytest.raises(ConcurrentUpdateError):
-        store.save_run(run, expected_version=version)
+        store.save_run(run, expected_version=persisted.version)
 
 
 def test_store_rejects_nan_json_values(tmp_path: Path) -> None:
@@ -156,14 +156,15 @@ def test_reloaded_run_exposes_version_for_a_following_compare_and_swap(
     store = store_at(tmp_path / "version.db")
     store.create_schema()
     original = Run.new("incident-timeout", "resilient")
-    persisted_version = store.save_run(original)
+    persisted = store.save_run(original)
     loaded = store.get_run(original.id)
 
     assert loaded is not None
-    assert loaded.version == persisted_version
+    assert loaded.version == persisted.version
     updated = loaded.transition("running")
     assert (
-        store.save_run(updated, expected_version=loaded.version) == loaded.version + 1
+        store.save_run(updated, expected_version=loaded.version).version
+        == loaded.version + 1
     )
     with pytest.raises(ConcurrentUpdateError):
         store.save_run(loaded, expected_version=loaded.version)
@@ -217,3 +218,58 @@ def test_failed_result_serialization_releases_owned_claim(tmp_path: Path) -> Non
         store.claim_tool_execution(run.id, "key", owner_token="two").owner_token
         == "two"
     )
+
+
+def test_save_run_returns_canonical_versioned_run_for_immediate_next_save(
+    tmp_path: Path,
+) -> None:
+    """Returning only an integer version leaves the immutable run stale."""
+    store = store_at(tmp_path / "canonical.db")
+    store.create_schema()
+
+    saved = store.save_run(Run.new("incident-timeout", "resilient"))
+
+    assert isinstance(saved, Run)
+    running = saved.transition("running")
+    persisted = store.save_run(running, expected_version=saved.version)
+    assert persisted.version == saved.version + 1
+
+
+def test_reconstructed_run_can_perform_two_consecutive_compare_and_swap_saves(
+    tmp_path: Path,
+) -> None:
+    """Returning a stale snapshot after one save must fail this test."""
+    store = store_at(tmp_path / "two-cas.db")
+    store.create_schema()
+    run = Run.new("incident-timeout", "resilient")
+    store.save_run(run)
+    loaded = store.get_run(run.id)
+
+    assert loaded is not None
+    first = store.save_run(
+        loaded.transition("running"), expected_version=loaded.version
+    )
+    assert isinstance(first, Run)
+    second = store.save_run(
+        first.transition("waiting_approval"), expected_version=first.version
+    )
+
+    assert second.version == first.version + 1
+
+
+def test_compatibility_save_tool_result_is_contention_safe(tmp_path: Path) -> None:
+    """A shared compatibility owner token lets losers complete work and must fail."""
+    store = store_at(tmp_path / "compatibility.db")
+    store.create_schema()
+    run = Run.new("incident-timeout", "resilient")
+    store.save_run(run)
+
+    def save(index: int) -> bool:
+        return store.save_tool_result(run.id, "same-key", {"winner": index})
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        outcomes = list(pool.map(save, range(12)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == 11
+    assert store.get_tool_result(run.id, "same-key") is not None

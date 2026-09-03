@@ -3,7 +3,7 @@
 import json
 from datetime import UTC, datetime
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import (
@@ -118,33 +118,33 @@ class SQLiteRunStore:
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
 
-    def save_run(self, run: Run, *, expected_version: int | None = None) -> int:
-        """Insert a run or atomically replace it when its version matches."""
+    def save_run(self, run: Run, *, expected_version: int | None = None) -> Run:
+        """Persist and return the canonical immutable run carrying its DB version."""
         with self._session.begin() as session:
             existing = session.get(RunRow, str(run.id))
             if existing is None:
+                persisted = run.model_copy(update={"version": 1})
                 session.add(
                     RunRow(
                         id=str(run.id),
                         trace_id=str(run.trace_id),
                         version=1,
-                        payload=_dump(run.model_copy(update={"version": 1})),
+                        payload=_dump(persisted),
                     )
                 )
-                return 1
+                return persisted
             if expected_version is None:
                 raise ConcurrentUpdateError(
                     "expected_version is required to update a run"
                 )
+            persisted = run.model_copy(update={"version": expected_version + 1})
             result = cast(
                 CursorResult[Any],
                 session.execute(
                     update(RunRow)
                     .where(RunRow.id == str(run.id), RunRow.version == expected_version)
                     .values(
-                        payload=_dump(
-                            run.model_copy(update={"version": expected_version + 1})
-                        ),
+                        payload=_dump(persisted),
                         trace_id=str(run.trace_id),
                         version=expected_version + 1,
                     )
@@ -152,7 +152,7 @@ class SQLiteRunStore:
             )
             if result.rowcount != 1:
                 raise ConcurrentUpdateError("stale run version")
-            return expected_version + 1
+            return persisted
 
     def get_run(self, run_id: UUID) -> Run | None:
         with self._session() as session:
@@ -335,7 +335,7 @@ class SQLiteRunStore:
         self, run_id: UUID, idempotency_key: str, result: JsonValue
     ) -> bool:
         """Compatibility helper that saves only when this caller wins the claim."""
-        owner_token = "compatibility-save"
+        owner_token = uuid4().hex
         claim = self.claim_tool_execution(
             run_id, idempotency_key, owner_token=owner_token
         )
@@ -344,9 +344,18 @@ class SQLiteRunStore:
             or claim.owner_token != owner_token
         ):
             return False
-        self.complete_tool_result(
-            run_id, idempotency_key, result, owner_token=owner_token
-        )
+        try:
+            self.complete_tool_result(
+                run_id, idempotency_key, result, owner_token=owner_token
+            )
+        except ValueError:
+            status = self.get_tool_claim(run_id, idempotency_key)
+            if (
+                status.state is ToolClaimState.COMPLETED
+                or status.owner_token != owner_token
+            ):
+                return False
+            raise
         return True
 
     def get_tool_result(self, run_id: UUID, idempotency_key: str) -> JsonValue | None:
