@@ -2,14 +2,17 @@
 
 from pathlib import Path
 
+from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.runs import Run
 from agent_reliability_lab.storage.models import TraceEvent
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder, sanitize_payload
 
 
-def sqlite_url(path: Path) -> str:
-    return f"sqlite:///{path.as_posix()}"
+def store_at(path: Path, secret_values: set[str] | None = None) -> SQLiteRunStore:
+    return SQLiteRunStore.from_settings(
+        Settings(data_dir=path.parent, database_path=path), secret_values=secret_values
+    )
 
 
 def test_recorder_redacts_nested_authorization_and_secret_values() -> None:
@@ -26,7 +29,7 @@ def test_recorder_redacts_nested_authorization_and_secret_values() -> None:
 
 def test_recorder_persists_only_sanitized_event_payloads(tmp_path: Path) -> None:
     """Persisting a secret in either event representation must fail this test."""
-    store = SQLiteRunStore.for_testing(sqlite_url(tmp_path / "traces.db"))
+    store = store_at(tmp_path / "traces.db")
     store.create_schema()
     run = Run.new("incident-timeout", "resilient")
     store.save_run(run)
@@ -69,9 +72,7 @@ def test_store_sanitizes_direct_event_writes_and_round_trips_span_fields(
     tmp_path: Path,
 ) -> None:
     """Bypassing TraceRecorder must not allow a secret into storage."""
-    store = SQLiteRunStore.for_testing(
-        sqlite_url(tmp_path / "boundary.db"), secret_values={"s3cr3t"}
-    )
+    store = store_at(tmp_path / "boundary.db", secret_values={"s3cr3t"})
     store.create_schema()
     run = Run.new("incident-timeout", "resilient")
     store.save_run(run)
@@ -92,3 +93,10 @@ def test_store_sanitizes_direct_event_writes_and_round_trips_span_fields(
     assert stored.status == "error"
     assert stored.attributes == {"http.method": "POST"}
     assert stored.payload == {"error": "failed with [REDACTED]"}
+
+
+def test_redaction_ignores_empty_secrets_and_replaces_overlap_longest_first() -> None:
+    """An empty secret or shortest-first overlap must not corrupt payload text."""
+    clean = sanitize_payload({"message": "abcabc"}, {"", "abc", "abcabc"})
+
+    assert clean == {"message": "[REDACTED]"}

@@ -1,6 +1,7 @@
 """Pydantic contracts for durable trace events."""
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -49,3 +50,23 @@ class TraceEvent(BaseModel):
             status=status,
             created_at=datetime.now(UTC),
         )
+
+
+class ToolClaimState(StrEnum):
+    """Durable lifecycle state for a single idempotent tool execution."""
+
+    ABSENT = "absent"
+    CLAIMED = "claimed"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class ToolClaim(BaseModel):
+    """Typed status returned for absent, owned, completed, and failed work."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state: ToolClaimState
+    owner_token: str | None = None
+    result: JsonValue | None = None
+    error: str | None = None

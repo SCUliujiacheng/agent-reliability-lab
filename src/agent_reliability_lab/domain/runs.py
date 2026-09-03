@@ -49,6 +49,7 @@ class Run(BaseModel):
     context: dict[str, object] = Field(default_factory=dict)
     pending_approval: bool = False
     result: dict[str, object] | None = None
+    version: int = Field(default=0, ge=0)
 
     @classmethod
     def new(cls, scenario_id: str, mode: Literal["fragile", "resilient"]) -> "Run":

@@ -34,7 +34,9 @@ def _sanitize(value: Any, secret_values: set[str]) -> JsonValue:
         return [_sanitize(item, secret_values) for item in value]
     if isinstance(value, str):
         clean = value
-        for secret in secret_values:
+        for secret in sorted(
+            (secret for secret in secret_values if secret), key=len, reverse=True
+        ):
             clean = clean.replace(secret, _REDACTED)
         return clean
     return _JSON_VALUE.validate_python(value)

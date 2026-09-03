@@ -23,7 +23,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.runs import Run
-from agent_reliability_lab.storage.models import TraceEvent
+from agent_reliability_lab.storage.models import ToolClaim, ToolClaimState, TraceEvent
 from agent_reliability_lab.storage.sanitization import sanitize_payload
 
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -72,7 +72,9 @@ class ToolResultRow(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
     idempotency_key: Mapped[str] = mapped_column(String(128), primary_key=True)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
+    owner_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ApprovalRow(Base):
@@ -95,10 +97,12 @@ class SQLiteRunStore:
     """Synchronous SQLite store with transactional concurrency boundaries."""
 
     def __init__(
-        self, database_url: str, *, secret_values: set[str] | None = None
+        self, settings: Settings, *, secret_values: set[str] | None = None
     ) -> None:
-        if not database_url.startswith("sqlite:///"):
-            raise ValueError("SQLiteRunStore only accepts sqlite:/// database URLs")
+        """Construct a store only from settings that confine its database path."""
+        if not isinstance(settings, Settings):
+            raise TypeError("SQLiteRunStore requires Settings; use from_settings")
+        database_url = _database_url(settings)
         self._engine: Engine = create_engine(database_url)
         self._session = sessionmaker(self._engine)
         self._secret_values = secret_values or set()
@@ -108,25 +112,8 @@ class SQLiteRunStore:
     def from_settings(
         cls, settings: Settings, *, secret_values: set[str] | None = None
     ) -> "SQLiteRunStore":
-        """Construct a SQLite store for a file resolved inside the configured data dir."""
-        data_dir = settings.data_dir.resolve()
-        database_path = settings.database_path.resolve()
-        try:
-            database_path.relative_to(data_dir)
-        except ValueError as error:
-            raise ValueError(
-                "database path must be inside the data directory"
-            ) from error
-        if database_path.suffix not in {".db", ".sqlite", ".sqlite3"}:
-            raise ValueError("database path must use a SQLite file extension")
-        return cls(f"sqlite:///{database_path.as_posix()}", secret_values=secret_values)
-
-    @classmethod
-    def for_testing(
-        cls, database_url: str, *, secret_values: set[str] | None = None
-    ) -> "SQLiteRunStore":
-        """Explicit trusted URL constructor for isolated test databases only."""
-        return cls(database_url, secret_values=secret_values)
+        """Construct a SQLite store from settings validated by the same boundary."""
+        return cls(settings, secret_values=secret_values)
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
@@ -141,7 +128,7 @@ class SQLiteRunStore:
                         id=str(run.id),
                         trace_id=str(run.trace_id),
                         version=1,
-                        payload=_dump(run),
+                        payload=_dump(run.model_copy(update={"version": 1})),
                     )
                 )
                 return 1
@@ -155,7 +142,9 @@ class SQLiteRunStore:
                     update(RunRow)
                     .where(RunRow.id == str(run.id), RunRow.version == expected_version)
                     .values(
-                        payload=_dump(run),
+                        payload=_dump(
+                            run.model_copy(update={"version": expected_version + 1})
+                        ),
                         trace_id=str(run.trace_id),
                         version=expected_version + 1,
                     )
@@ -236,8 +225,16 @@ class SQLiteRunStore:
                 for row in rows
             ]
 
-    def claim_tool_execution(self, run_id: UUID, idempotency_key: str) -> bool:
-        """Atomically claim one tool execution; contenders receive ``False``."""
+    def get_tool_claim(self, run_id: UUID, idempotency_key: str) -> ToolClaim:
+        """Return typed status, including an explicit absent state."""
+        with self._session() as session:
+            row = session.get(ToolResultRow, (str(run_id), idempotency_key))
+            return _tool_claim(row)
+
+    def claim_tool_execution(
+        self, run_id: UUID, idempotency_key: str, *, owner_token: str
+    ) -> ToolClaim:
+        """Atomically acquire absent/failed work, or return the existing status."""
         with self._session.begin() as session:
             result = cast(
                 CursorResult[Any],
@@ -247,15 +244,53 @@ class SQLiteRunStore:
                         run_id=str(run_id),
                         idempotency_key=idempotency_key,
                         state="claimed",
+                        owner_token=owner_token,
                     )
                     .on_conflict_do_nothing()
                 ),
             )
-            return result.rowcount == 1
+            if result.rowcount == 1:
+                return ToolClaim(state=ToolClaimState.CLAIMED, owner_token=owner_token)
+            row = session.get(ToolResultRow, (str(run_id), idempotency_key))
+            if row is not None and row.state == ToolClaimState.FAILED:
+                reclaimed = cast(
+                    CursorResult[Any],
+                    session.execute(
+                        update(ToolResultRow)
+                        .where(
+                            ToolResultRow.run_id == str(run_id),
+                            ToolResultRow.idempotency_key == idempotency_key,
+                            ToolResultRow.state == ToolClaimState.FAILED,
+                        )
+                        .values(
+                            state=ToolClaimState.CLAIMED,
+                            owner_token=owner_token,
+                            payload=None,
+                            error=None,
+                        )
+                    ),
+                )
+                if reclaimed.rowcount == 1:
+                    return ToolClaim(
+                        state=ToolClaimState.CLAIMED, owner_token=owner_token
+                    )
+                row = session.get(ToolResultRow, (str(run_id), idempotency_key))
+            return _tool_claim(row)
 
     def complete_tool_result(
-        self, run_id: UUID, idempotency_key: str, result: JsonValue
+        self, run_id: UUID, idempotency_key: str, result: JsonValue, *, owner_token: str
     ) -> None:
+        """Complete a claim only when its owning worker still controls it."""
+        try:
+            payload = _dump(result)
+        except (TypeError, ValueError):
+            self.fail_tool_execution(
+                run_id,
+                idempotency_key,
+                owner_token=owner_token,
+                error="result serialization failed",
+            )
+            raise
         with self._session.begin() as session:
             update_result = cast(
                 CursorResult[Any],
@@ -265,8 +300,9 @@ class SQLiteRunStore:
                         ToolResultRow.run_id == str(run_id),
                         ToolResultRow.idempotency_key == idempotency_key,
                         ToolResultRow.state == "claimed",
+                        ToolResultRow.owner_token == owner_token,
                     )
-                    .values(state="completed", payload=_dump(result))
+                    .values(state="completed", payload=payload)
                 ),
             )
             if update_result.rowcount != 1:
@@ -274,23 +310,48 @@ class SQLiteRunStore:
                     "tool execution was not claimed or is already completed"
                 )
 
+    def fail_tool_execution(
+        self, run_id: UUID, idempotency_key: str, *, owner_token: str, error: str
+    ) -> None:
+        """Mark the owner's claim failed so a later worker may reclaim it."""
+        with self._session.begin() as session:
+            released = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(ToolResultRow)
+                    .where(
+                        ToolResultRow.run_id == str(run_id),
+                        ToolResultRow.idempotency_key == idempotency_key,
+                        ToolResultRow.state == ToolClaimState.CLAIMED,
+                        ToolResultRow.owner_token == owner_token,
+                    )
+                    .values(state=ToolClaimState.FAILED, error=error)
+                ),
+            )
+            if released.rowcount != 1:
+                raise ValueError("tool claim is not owned by this worker")
+
     def save_tool_result(
         self, run_id: UUID, idempotency_key: str, result: JsonValue
     ) -> bool:
         """Compatibility helper that saves only when this caller wins the claim."""
-        if not self.claim_tool_execution(run_id, idempotency_key):
+        owner_token = "compatibility-save"
+        claim = self.claim_tool_execution(
+            run_id, idempotency_key, owner_token=owner_token
+        )
+        if (
+            claim.state is not ToolClaimState.CLAIMED
+            or claim.owner_token != owner_token
+        ):
             return False
-        self.complete_tool_result(run_id, idempotency_key, result)
+        self.complete_tool_result(
+            run_id, idempotency_key, result, owner_token=owner_token
+        )
         return True
 
     def get_tool_result(self, run_id: UUID, idempotency_key: str) -> JsonValue | None:
-        with self._session() as session:
-            row = session.get(ToolResultRow, (str(run_id), idempotency_key))
-            return (
-                _load(row.payload)
-                if row is not None and row.payload is not None
-                else None
-            )
+        claim = self.get_tool_claim(run_id, idempotency_key)
+        return claim.result if claim.state is ToolClaimState.COMPLETED else None
 
     def record_approval(
         self, run_id: UUID, *, actor: str, allow: bool, reason: str | None = None
@@ -351,6 +412,29 @@ def _configure_sqlite_connection(connection: Any, _: Any) -> None:
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA busy_timeout=30000")
     cursor.close()
+
+
+def _database_url(settings: Settings) -> str:
+    data_dir = settings.data_dir.resolve()
+    database_path = settings.database_path.resolve()
+    try:
+        database_path.relative_to(data_dir)
+    except ValueError as error:
+        raise ValueError("database path must be inside the data directory") from error
+    if database_path.suffix not in {".db", ".sqlite", ".sqlite3"}:
+        raise ValueError("database path must use a SQLite file extension")
+    return f"sqlite:///{database_path.as_posix()}"
+
+
+def _tool_claim(row: ToolResultRow | None) -> ToolClaim:
+    if row is None:
+        return ToolClaim(state=ToolClaimState.ABSENT)
+    return ToolClaim(
+        state=ToolClaimState(row.state),
+        owner_token=row.owner_token,
+        result=_load(row.payload) if row.payload is not None else None,
+        error=row.error,
+    )
 
 
 def _dump(value: Any) -> str:
