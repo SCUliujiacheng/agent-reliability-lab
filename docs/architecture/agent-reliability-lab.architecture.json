@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agent Reliability Lab",
+    "locale": "en",
+    "output": "agent-reliability-lab-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "interactive-run",
+        "label": "Interactive run",
+        "focus": ["operator", "dashboard", "api", "runtime", "scenario-tools", "sqlite"],
+        "note": "Launch a deterministic scenario, approve guarded actions, and inspect the durable trace."
+      },
+      {
+        "id": "evaluation-gate",
+        "label": "Evaluation gate",
+        "focus": ["cli", "evaluator", "runtime", "scenario-tools", "baseline"],
+        "note": "Compare fragile and resilient execution, then enforce regression claims against a versioned baseline."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Engineer",
+      "sublabel": "Browser",
+      "pos": [30, 235],
+      "size": [130, 66]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Evidence Dashboard",
+      "sublabel": "React + Vite",
+      "tag": "traces + approvals",
+      "pos": [220, 235],
+      "size": [160, 72]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Reliability API",
+      "sublabel": "FastAPI /v1",
+      "tag": "bounded payloads",
+      "pos": [450, 235],
+      "size": [160, 72]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Agent Runtime",
+      "sublabel": "durable state machine",
+      "tag": "leases + retries",
+      "pos": [690, 235],
+      "size": [175, 72]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite Evidence Store",
+      "sublabel": "runs, events, approvals",
+      "tag": "atomic CAS",
+      "pos": [935, 235],
+      "size": [180, 72]
+    },
+    {
+      "id": "scenario-tools",
+      "type": "backend",
+      "label": "Scenario + Tool Lab",
+      "sublabel": "deterministic faults",
+      "tag": "6 scenarios",
+      "pos": [690, 85],
+      "size": [175, 72]
+    },
+    {
+      "id": "cli",
+      "type": "external",
+      "label": "CLI / CI",
+      "sublabel": "evaluate + gate",
+      "pos": [220, 430],
+      "size": [160, 66]
+    },
+    {
+      "id": "evaluator",
+      "type": "backend",
+      "label": "Evaluation Engine",
+      "sublabel": "paired-mode metrics",
+      "tag": "claims + provenance",
+      "pos": [450, 430],
+      "size": [175, 72]
+    },
+    {
+      "id": "baseline",
+      "type": "database",
+      "label": "Versioned Baseline",
+      "sublabel": "JSON evidence artifact",
+      "tag": "regression contract",
+      "pos": [935, 430],
+      "size": [180, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Local reproducible workspace",
+      "wraps": ["dashboard", "api", "runtime", "sqlite", "scenario-tools", "evaluator", "baseline"],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-dashboard",
+      "from": "operator",
+      "to": "dashboard",
+      "label": "inspect + approve",
+      "labelDy": -27,
+      "variant": "emphasis"
+    },
+    {
+      "id": "dashboard-api",
+      "from": "dashboard",
+      "to": "api",
+      "label": "REST / JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-runtime",
+      "from": "api",
+      "to": "runtime",
+      "label": "launch / resume",
+      "variant": "emphasis"
+    },
+    {
+      "id": "runtime-store",
+      "from": "runtime",
+      "to": "sqlite",
+      "label": "atomic state + trace",
+      "labelDy": -30,
+      "variant": "emphasis"
+    },
+    {
+      "id": "runtime-tools",
+      "from": "runtime",
+      "to": "scenario-tools",
+      "label": "validated tool calls"
+    },
+    {
+      "id": "cli-evaluator",
+      "from": "cli",
+      "to": "evaluator",
+      "label": "evaluate / gate",
+      "labelDy": -27,
+      "variant": "emphasis"
+    },
+    {
+      "id": "evaluator-runtime",
+      "from": "evaluator",
+      "to": "runtime",
+      "label": "fragile + resilient runs"
+    },
+    {
+      "id": "evaluator-baseline",
+      "from": "evaluator",
+      "to": "baseline",
+      "label": "compare claims",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Observable by design",
+      "items": [
+        "Every transition is a sequence-ordered trace event",
+        "Approvals and side effects share one durable state boundary"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Measurable reliability",
+      "items": [
+        "The same deterministic faults exercise both execution modes",
+        "A versioned baseline turns benchmark claims into a CI gate"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Deliberate scope",
+      "items": [
+        "Single-node SQLite demonstration, not a production control plane",
+        "Scripted local tools keep evidence reproducible and auditable"
+      ]
+    }
+  ]
+}
