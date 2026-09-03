@@ -238,28 +238,58 @@ def test_write_and_high_risk_definitions_must_declare_idempotency() -> None:
 
 
 def test_concurrent_high_risk_write_executes_once(tmp_path: Path) -> None:
-    """Two gateway instances must share the durable write claim."""
-    first, run = _gateway(tmp_path)
-    second = ToolGateway(
-        first.store,
-        TraceRecorder(first.store),
-        incident_registry(first.incident_backend),
-        incident_backend=first.incident_backend,
+    """A contender must observe the claim while the owner handler is blocked."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        prepared: bool
+
+    handler_started = asyncio.Event()
+    release_owner = asyncio.Event()
+    invocations = 0
+
+    async def blocked_write(_: Input, __: ToolExecutionContext) -> Output:
+        nonlocal invocations
+        invocations += 1
+        if invocations == 1:
+            handler_started.set()
+            await release_owner.wait()
+        return Output(prepared=True)
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            "blocked_write",
+            Input,
+            Output,
+            blocked_write,
+            is_write=True,
+            idempotent=True,
+        )
     )
-    first.store.record_approval(run.id, actor="reviewer", allow=True, reason="ok")
-    action = _call(
-        "prepare_rollback",
-        key="concurrent-rollback",
-        deployment_id="deploy-2026-09-04-001",
-    )
+    settings = Settings(data_dir=tmp_path, database_path=tmp_path / "overlap.db")
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    run = store.save_run(Run.new("overlap", "resilient"))
+    first = ToolGateway(store, TraceRecorder(store), registry)
+    second = ToolGateway(store, TraceRecorder(store), registry)
+    action = _call("blocked_write", key="concurrent-write")
 
-    async def invoke() -> list[object]:
-        return await asyncio.gather(first.call(run, action), second.call(run, action))
+    async def invoke() -> tuple[object, object]:
+        owner_task = asyncio.create_task(first.call(run, action))
+        await handler_started.wait()
+        contender = await second.call(run, action)
+        release_owner.set()
+        return await owner_task, contender
 
-    results = asyncio.run(invoke())
+    owner, contender = asyncio.run(invoke())
 
-    assert {result.status for result in results} <= {"succeeded", "failed"}
-    assert first.incident_backend.rollback_preparations == 1
+    assert owner.status == "succeeded"
+    assert contender.error_code == "idempotency_in_progress"
+    assert invocations == 1
 
 
 def test_side_effect_before_invalid_output_is_not_replayed(tmp_path: Path) -> None:
@@ -409,3 +439,88 @@ def test_unknown_fault_tool_is_rejected_before_execution(tmp_path: Path) -> None
 
     assert result.error_code == "invalid_fault_plan"
     assert gateway.events == []
+
+
+def test_nan_write_completion_is_indeterminate_and_never_replayed(
+    tmp_path: Path,
+) -> None:
+    """A write whose schema-valid output cannot be stored must not be reclaimed."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        measurement: float
+
+    side_effects = 0
+
+    async def nan_write(_: Input, __: ToolExecutionContext) -> Output:
+        nonlocal side_effects
+        side_effects += 1
+        return Output(measurement=float("nan"))
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            "nan_write", Input, Output, nan_write, is_write=True, idempotent=True
+        )
+    )
+    settings = Settings(data_dir=tmp_path, database_path=tmp_path / "nan-write.db")
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    run = store.save_run(Run.new("nan-write", "resilient"))
+    gateway = ToolGateway(store, TraceRecorder(store), registry)
+    action = _call("nan_write", key="nan-once")
+
+    first = gateway.call_sync(run, action)
+    second = gateway.call_sync(run, action)
+
+    assert first.error_code == "idempotency_indeterminate"
+    assert second.error_code == "idempotency_indeterminate"
+    assert side_effects == 1
+
+
+def test_backoff_cancellation_keeps_one_terminal_event_per_attempt(
+    tmp_path: Path,
+) -> None:
+    """Cancelling retry sleep must not add a second terminal event to attempt one."""
+    retry_sleep_started = asyncio.Event()
+
+    async def blocked_sleeper(_: float) -> None:
+        retry_sleep_started.set()
+        await asyncio.Event().wait()
+
+    gateway, run = _gateway(tmp_path, sleeper=blocked_sleeper)
+
+    async def cancel_during_backoff() -> None:
+        task = asyncio.create_task(
+            gateway.call(
+                run,
+                _call("search_recent_logs", key="backoff-cancel"),
+                timeout_on_attempt(1, tool_name="search_recent_logs"),
+            )
+        )
+        await retry_sleep_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(cancel_during_backoff())
+
+    terminal_types = {
+        "tool.attempt.failed",
+        "tool.attempt.succeeded",
+        "tool.attempt.cancelled",
+    }
+    terminal_events = [
+        event for event in gateway.events if event.event_type in terminal_types
+    ]
+    assert len(terminal_events) == 1
+    assert terminal_events[0].event_type == "tool.attempt.failed"
+    retry_cancelled = [
+        event for event in gateway.events if event.event_type == "tool.retry.cancelled"
+    ]
+    assert len(retry_cancelled) == 1
+    assert retry_cancelled[0].status == "error"
+    assert retry_cancelled[0].span_id != terminal_events[0].span_id

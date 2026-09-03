@@ -171,7 +171,7 @@ class ToolGateway:
                 )
             raise
         if owner_token is not None and action.idempotency_key is not None:
-            self._persist_claim_result(
+            result = self._persist_claim_result(
                 run, action.idempotency_key, owner_token, result, definition
             )
         return result
@@ -268,9 +268,12 @@ class ToolGateway:
             except asyncio.CancelledError:
                 self._record(
                     run,
-                    "tool.attempt.cancelled",
-                    {"tool_name": action.tool_name, "attempt": attempt},
-                    span_id=span_id,
+                    "tool.retry.cancelled",
+                    {
+                        "tool_name": action.tool_name,
+                        "after_attempt": attempt,
+                    },
+                    span_id=uuid4(),
                     status="error",
                 )
                 raise
@@ -303,30 +306,46 @@ class ToolGateway:
         owner_token: str,
         result: ToolCallResult,
         definition: ToolDefinition[Any, Any],
-    ) -> None:
+    ) -> ToolCallResult:
         if result.status == "succeeded":
-            self.store.complete_tool_result(
-                run.id,
-                idempotency_key,
-                result.output,
-                owner_token=owner_token,
+            disposition = (
+                ToolFailureDisposition.INDETERMINATE
+                if definition.is_write
+                else ToolFailureDisposition.RETRYABLE
             )
-        else:
-            self.store.fail_tool_execution(
-                run.id,
-                idempotency_key,
-                owner_token=owner_token,
-                error=result.error_code or "tool_execution_failed",
-                disposition=(
-                    ToolFailureDisposition.INDETERMINATE
+            try:
+                self.store.complete_tool_result(
+                    run.id,
+                    idempotency_key,
+                    result.output,
+                    owner_token=owner_token,
+                    failure_disposition=disposition,
+                )
+            except ValueError:
+                return ToolCallResult.failed(
+                    "idempotency_indeterminate"
                     if definition.is_write
-                    else (
-                        ToolFailureDisposition.RETRYABLE
-                        if result.retryable
-                        else ToolFailureDisposition.TERMINAL
-                    )
-                ),
-            )
+                    else "result_serialization_failed",
+                    attempts=result.attempts,
+                    retryable=not definition.is_write,
+                )
+            return result
+        self.store.fail_tool_execution(
+            run.id,
+            idempotency_key,
+            owner_token=owner_token,
+            error=result.error_code or "tool_execution_failed",
+            disposition=(
+                ToolFailureDisposition.INDETERMINATE
+                if definition.is_write
+                else (
+                    ToolFailureDisposition.RETRYABLE
+                    if result.retryable
+                    else ToolFailureDisposition.TERMINAL
+                )
+            ),
+        )
+        return result
 
     def _record(
         self,

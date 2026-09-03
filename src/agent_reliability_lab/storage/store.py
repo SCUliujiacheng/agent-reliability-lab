@@ -311,7 +311,13 @@ class SQLiteRunStore:
             return _tool_claim(row)
 
     def complete_tool_result(
-        self, run_id: UUID, idempotency_key: str, result: JsonValue, *, owner_token: str
+        self,
+        run_id: UUID,
+        idempotency_key: str,
+        result: JsonValue,
+        *,
+        owner_token: str,
+        failure_disposition: ToolFailureDisposition = ToolFailureDisposition.RETRYABLE,
     ) -> None:
         """Complete a claim only when its owning worker still controls it."""
         try:
@@ -322,6 +328,7 @@ class SQLiteRunStore:
                 idempotency_key,
                 owner_token=owner_token,
                 error="result serialization failed",
+                disposition=failure_disposition,
             )
             raise
         with self._session.begin() as session:
