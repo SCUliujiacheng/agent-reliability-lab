@@ -15,11 +15,18 @@ from agent_reliability_lab.evaluation.models import (
     EvaluationProvenance,
     EvaluationReport,
     FaultEvidence,
+    LogicalActionProjection,
     ModeResult,
+    OrderedTraceEvidence,
     OutputValidationEvidence,
     SuiteManifestEntry,
 )
-from agent_reliability_lab.evaluation.runner import compare_modes, suite_sha256
+from agent_reliability_lab.evaluation.runner import (
+    canonical_action_fingerprint,
+    compare_modes,
+    suite_sha256,
+    trace_evidence_digest,
+)
 
 
 def make_case(
@@ -32,11 +39,15 @@ def make_case(
     recoverable: int = 1,
     accepted: int = 1,
     invalid_accepted: int = 0,
+    fault_step: int | None = None,
 ) -> CaseResult:
+    if fault_step is None:
+        fault_step = max(0, accepted - int(bool(recovered)))
+    call_count = fault_step + 1 if recoverable else max(1, accepted)
     declared = (
         (
             FaultEvidence(
-                action_step=0,
+                action_step=fault_step,
                 tool_name="search_recent_logs",
                 attempt=1,
                 kind="timeout",
@@ -46,11 +57,25 @@ def make_case(
         else ()
     )
     effective_recovered = recovered if correct else 0
-    attempts = []
+    attempts: list[AttemptEvidence] = []
+    accepted_steps: list[int] = []
+    for step in range(call_count):
+        if recoverable and step == fault_step:
+            continue
+        attempts.append(
+            AttemptEvidence(
+                action_step=step,
+                tool_name="search_recent_logs",
+                attempt=1,
+                status="succeeded",
+            )
+        )
+        if len(accepted_steps) < accepted:
+            accepted_steps.append(step)
     if recoverable:
         attempts.append(
             AttemptEvidence(
-                action_step=0,
+                action_step=fault_step,
                 tool_name="search_recent_logs",
                 attempt=1,
                 status="failed",
@@ -58,27 +83,19 @@ def make_case(
                 transient=True,
             )
         )
-        if effective_recovered:
+        if recovered:
             attempts.append(
                 AttemptEvidence(
-                    action_step=0,
+                    action_step=fault_step,
                     tool_name="search_recent_logs",
                     attempt=2,
                     status="succeeded",
                 )
             )
-    elif accepted:
-        attempts.append(
-            AttemptEvidence(
-                action_step=0,
-                tool_name="search_recent_logs",
-                attempt=1,
-                status="succeeded",
-            )
-        )
+            accepted_steps.append(fault_step)
     accepted_outputs = tuple(
         AcceptedOutputEvidence(
-            action_step=index,
+            action_step=step,
             tool_name="search_recent_logs",
             output=(
                 {}
@@ -90,8 +107,117 @@ def make_case(
                 }
             ),
         )
-        for index in range(accepted)
+        for index, step in enumerate(accepted_steps[:accepted])
     )
+    call_payloads = tuple(
+        {
+            "type": "call_tool",
+            "tool_name": "search_recent_logs",
+            "arguments": {},
+            "idempotency_key": None,
+        }
+        for _ in range(call_count)
+    )
+    finish_payload = {
+        "type": "finish",
+        "summary": "fixture conclusion",
+        "evidence_refs": [],
+        "outcome": "resolved",
+    }
+    action_payloads = (*call_payloads, finish_payload)
+    logical_actions = tuple(
+        LogicalActionProjection(
+            action_step=step,
+            kind=payload["type"],
+            tool_name=(
+                str(payload["tool_name"]) if payload["type"] == "call_tool" else None
+            ),
+            action_fingerprint=canonical_action_fingerprint(payload),
+        )
+        for step, payload in enumerate(action_payloads)
+    )
+    trace_items: list[OrderedTraceEvidence] = []
+    sequence = 1
+
+    def record(event_type: str, payload: dict[str, object]) -> None:
+        nonlocal sequence
+        trace_items.append(
+            OrderedTraceEvidence(
+                sequence=sequence,
+                event_type=event_type,
+                payload=payload,
+            )
+        )
+        sequence += 1
+
+    record("run.running", {"from_status": "queued"})
+    for step, payload in enumerate(call_payloads):
+        record("policy.action", {**payload, "action_step": step})
+        record(
+            "tool.attempt.started",
+            {"action_step": step, "tool_name": "search_recent_logs", "attempt": 1},
+        )
+        if recoverable and step == fault_step:
+            record(
+                "fault.injected",
+                {
+                    "action_step": step,
+                    "tool_name": "search_recent_logs",
+                    "attempt": 1,
+                    "kind": "timeout",
+                },
+            )
+            record(
+                "tool.attempt.failed",
+                {
+                    "action_step": step,
+                    "tool_name": "search_recent_logs",
+                    "attempt": 1,
+                    "code": "tool_timeout",
+                    "transient": True,
+                },
+            )
+            if recovered:
+                record(
+                    "tool.attempt.started",
+                    {
+                        "action_step": step,
+                        "tool_name": "search_recent_logs",
+                        "attempt": 2,
+                    },
+                )
+                record(
+                    "tool.attempt.succeeded",
+                    {
+                        "action_step": step,
+                        "tool_name": "search_recent_logs",
+                        "attempt": 2,
+                    },
+                )
+        else:
+            record(
+                "tool.attempt.succeeded",
+                {
+                    "action_step": step,
+                    "tool_name": "search_recent_logs",
+                    "attempt": 1,
+                },
+            )
+    final_status = "succeeded" if terminal_success else "failed"
+    final_outcome = "resolved" if correct else "tool_timeout"
+    if terminal_success:
+        finish_step = len(call_payloads)
+        record("policy.action", {**finish_payload, "action_step": finish_step})
+        final_result = {
+            "outcome": final_outcome,
+            "summary": "fixture conclusion",
+            "evidence_refs": [],
+        }
+        record("run.succeeded", final_result)
+    else:
+        final_result = {"code": final_outcome}
+        record("run.failed", final_result)
+    trace_evidence = tuple(trace_items)
     return CaseResult(
         scenario_id=scenario_id,
         scenario_version=1,
@@ -100,20 +226,24 @@ def make_case(
         mode=mode,
         run_id=UUID(int=1),
         trace_id=UUID(int=2),
-        trace_digest="2" * 64,
+        trace_digest=trace_evidence_digest(trace_evidence),
+        trace_evidence=trace_evidence,
+        logical_actions=logical_actions,
+        final_status=final_status,
+        final_result=final_result,
         expected_outcome="resolved",
         observed_outcome="resolved" if correct else "tool_timeout",
         correct=correct,
         terminal_success=terminal_success,
-        expected_tool_sequence=("search_recent_logs",),
-        actual_tool_sequence=("search_recent_logs",),
-        sequence_match_count=1,
-        sequence_denominator=1,
+        expected_tool_sequence=("search_recent_logs",) * call_count,
+        actual_tool_sequence=("search_recent_logs",) * call_count,
+        sequence_match_count=call_count,
+        sequence_denominator=call_count,
         unnecessary_call_count=0,
-        logical_tool_call_count=1,
+        logical_tool_call_count=call_count,
         attempt_evidence=tuple(attempts),
         attempt_count=len(attempts),
-        retry_attempt_count=effective_recovered,
+        retry_attempt_count=int(bool(recovered)),
         declared_faults=declared,
         observed_faults=declared,
         verified_transient_fault_count=recoverable,
@@ -151,6 +281,16 @@ def make_report(
                 mode="fragile",
                 recovered=0,
                 recoverable=case.verified_transient_fault_count,
+                accepted=(
+                    case.declared_faults[0].action_step
+                    if case.declared_faults
+                    else case.accepted_output_count
+                ),
+                fault_step=(
+                    case.declared_faults[0].action_step
+                    if case.declared_faults
+                    else None
+                ),
                 correct=False,
                 terminal_success=False,
             )
@@ -162,14 +302,19 @@ def make_report(
             scenario_id=case.scenario_id,
             version=1,
             scenario_sha256=case.scenario_sha256,
+            logical_actions=case.logical_actions,
+            expected_tool_sequence=case.expected_tool_sequence,
+            expected_outcome=case.expected_outcome,
+            declared_faults=case.declared_faults,
+            approval_supplied=False,
         )
         for case in resilient_cases
     )
     provenance = EvaluationProvenance(
-        report_version="2",
-        schema_version="2",
-        grader_version="exact-v2",
-        normalization_version="baseline-v2",
+        report_version="3",
+        schema_version="3",
+        grader_version="exact-v3",
+        normalization_version="baseline-v3",
         suite_hash=suite_hash or suite_sha256(manifest),
         suite_manifest=manifest,
         git_revision="f" * 40,

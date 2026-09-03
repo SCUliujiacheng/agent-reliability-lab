@@ -16,13 +16,6 @@ class ReportModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
-class SuiteManifestEntry(ReportModel):
-    relative_path: str = Field(min_length=1)
-    scenario_id: str = Field(min_length=1)
-    version: int = Field(ge=1)
-    scenario_sha256: str = Field(min_length=64, max_length=64)
-
-
 class EffectiveConfiguration(ReportModel):
     fragile_max_attempts: int = 1
     resilient_max_attempts: int = 2
@@ -30,11 +23,60 @@ class EffectiveConfiguration(ReportModel):
     initial_backoff_seconds: float = 0.1
 
 
+class FaultEvidence(ReportModel):
+    action_step: int = Field(ge=0)
+    tool_name: str = Field(min_length=1)
+    attempt: int = Field(ge=1)
+    kind: Literal["timeout", "rate_limit", "tool_error", "malformed_output"]
+
+
+class LogicalActionProjection(ReportModel):
+    """Frozen action identity independent of runtime attempt behavior."""
+
+    action_step: int = Field(ge=0)
+    kind: Literal["call_tool", "finish", "fail"]
+    tool_name: str | None = None
+    action_fingerprint: str = Field(min_length=64, max_length=64)
+
+
+class SuiteManifestEntry(ReportModel):
+    relative_path: str = Field(min_length=1)
+    scenario_id: str = Field(min_length=1)
+    version: int = Field(ge=1)
+    scenario_sha256: str = Field(min_length=64, max_length=64)
+    logical_actions: tuple[LogicalActionProjection, ...]
+    expected_tool_sequence: tuple[str, ...]
+    expected_outcome: str
+    declared_faults: tuple[FaultEvidence, ...]
+    approval_supplied: bool
+
+
+class OrderedTraceEvidence(ReportModel):
+    """Minimal ordered trace projection from which gate claims are derived."""
+
+    sequence: int = Field(ge=1)
+    event_type: Literal[
+        "run.running",
+        "policy.action",
+        "tool.attempt.started",
+        "fault.injected",
+        "tool.output.validation_failed",
+        "tool.attempt.failed",
+        "tool.attempt.succeeded",
+        "tool.attempt.cancelled",
+        "run.waiting_approval",
+        "approval.recorded",
+        "run.succeeded",
+        "run.failed",
+    ]
+    payload: dict[str, JsonValue]
+
+
 class EvaluationProvenance(ReportModel):
-    report_version: Literal["2"] = "2"
-    schema_version: Literal["2"] = "2"
-    grader_version: Literal["exact-v2"] = "exact-v2"
-    normalization_version: Literal["baseline-v2"] = "baseline-v2"
+    report_version: Literal["3"] = "3"
+    schema_version: Literal["3"] = "3"
+    grader_version: Literal["exact-v3"] = "exact-v3"
+    normalization_version: Literal["baseline-v3"] = "baseline-v3"
     suite_hash: str = Field(min_length=64, max_length=64)
     suite_manifest: tuple[SuiteManifestEntry, ...]
     git_revision: str
@@ -46,13 +88,6 @@ class EvaluationProvenance(ReportModel):
     latency_kind: Literal["perf_counter_ns"] = "perf_counter_ns"
     percentile_method: Literal["nearest-rank"] = "nearest-rank"
     token_estimator: Literal["scripted-no-provider-v1"] = "scripted-no-provider-v1"
-
-
-class FaultEvidence(ReportModel):
-    action_step: int = Field(ge=0)
-    tool_name: str = Field(min_length=1)
-    attempt: int = Field(ge=1)
-    kind: Literal["timeout", "rate_limit", "tool_error", "malformed_output"]
 
 
 class AttemptEvidence(ReportModel):
@@ -93,6 +128,10 @@ class CaseResult(ReportModel):
     run_id: UUID
     trace_id: UUID
     trace_digest: str = Field(min_length=64, max_length=64)
+    trace_evidence: tuple[OrderedTraceEvidence, ...]
+    logical_actions: tuple[LogicalActionProjection, ...]
+    final_status: Literal["succeeded", "failed", "waiting_approval"]
+    final_result: dict[str, JsonValue] | None
     expected_outcome: str
     observed_outcome: str
     correct: bool
@@ -195,9 +234,11 @@ __all__ = [
     "EvaluationReport",
     "FaultEvidence",
     "GateResult",
+    "LogicalActionProjection",
     "ModeComparison",
     "ModeMetrics",
     "ModeResult",
+    "OrderedTraceEvidence",
     "OutputValidationEvidence",
     "SuiteManifestEntry",
 ]

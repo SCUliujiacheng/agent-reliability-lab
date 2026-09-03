@@ -18,7 +18,7 @@ from uuid import uuid4
 from pydantic import JsonValue, ValidationError
 
 from agent_reliability_lab.config import Settings
-from agent_reliability_lab.domain.actions import CallToolAction
+from agent_reliability_lab.domain.actions import AgentAction, CallToolAction
 from agent_reliability_lab.domain.runs import Run, RunStatus
 from agent_reliability_lab.domain.scenarios import FaultType, Scenario
 from agent_reliability_lab.evaluation.graders import (
@@ -35,8 +35,10 @@ from agent_reliability_lab.evaluation.models import (
     EvaluationProvenance,
     EvaluationReport,
     FaultEvidence,
+    LogicalActionProjection,
     ModeComparison,
     ModeResult,
+    OrderedTraceEvidence,
     OutputValidationEvidence,
     SuiteManifestEntry,
 )
@@ -79,6 +81,11 @@ def build_suite_manifest(suite: Path) -> tuple[SuiteManifestEntry, ...]:
                 scenario_id=scenario.id,
                 version=scenario.version,
                 scenario_sha256=scenario_sha256(path),
+                logical_actions=logical_action_projection(scenario),
+                expected_tool_sequence=scenario.expected_tool_sequence,
+                expected_outcome=scenario.expected_outcome,
+                declared_faults=_declared_fault_evidence(scenario),
+                approval_supplied=scenario.approval_supplied,
             )
         )
     if not entries:
@@ -93,6 +100,46 @@ def suite_sha256(manifest: Sequence[SuiteManifestEntry]) -> str:
             entry.model_dump(mode="json")
             for entry in sorted(manifest, key=lambda item: item.relative_path)
         ],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def canonical_action_fingerprint(action: AgentAction | dict[str, Any]) -> str:
+    """Hash one complete frozen action using canonical JSON."""
+    payload = action.model_dump(mode="json") if not isinstance(action, dict) else action
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def logical_action_projection(
+    scenario: Scenario,
+) -> tuple[LogicalActionProjection, ...]:
+    """Project the exact ordered scripted actions that every mode must share."""
+    return tuple(
+        LogicalActionProjection(
+            action_step=step,
+            kind=action.type,
+            tool_name=action.tool_name if isinstance(action, CallToolAction) else None,
+            action_fingerprint=canonical_action_fingerprint(action),
+        )
+        for step, action in enumerate(scenario.actions)
+    )
+
+
+def trace_evidence_digest(evidence: Sequence[OrderedTraceEvidence]) -> str:
+    """Digest the persisted ordered evidence projection, not opaque trace metadata."""
+    canonical = json.dumps(
+        [item.model_dump(mode="json") for item in evidence],
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -348,6 +395,8 @@ def _grade_case(
     write_execution_count: int,
     store_run_count: int,
 ) -> CaseResult:
+    trace_evidence = _ordered_trace_evidence(events)
+    logical_actions = logical_action_projection(scenario)
     actual_sequence = _logical_tool_sequence(events)
     sequence = tool_sequence_grade(scenario.expected_tool_sequence, actual_sequence)
     declared = _declared_fault_evidence(scenario)
@@ -384,7 +433,11 @@ def _grade_case(
         mode=mode,
         run_id=run.id,
         trace_id=run.trace_id,
-        trace_digest=_trace_digest(events),
+        trace_digest=trace_evidence_digest(trace_evidence),
+        trace_evidence=trace_evidence,
+        logical_actions=logical_actions,
+        final_status=cast(Any, run.status.value),
+        final_result=cast(dict[str, JsonValue] | None, run.result),
         expected_outcome=scenario.expected_outcome,
         observed_outcome=observed_outcome,
         correct=correct,
@@ -633,15 +686,41 @@ def _payload(event: TraceEvent) -> dict[str, Any]:
     return cast(dict[str, Any], event.payload)
 
 
-def _trace_digest(events: Sequence[TraceEvent]) -> str:
-    canonical = json.dumps(
-        [event.model_dump(mode="json") for event in events],
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-    return hashlib.sha256(canonical.encode()).hexdigest()
+_EVIDENCE_EVENT_TYPES = {
+    "run.running",
+    "policy.action",
+    "tool.attempt.started",
+    "fault.injected",
+    "tool.output.validation_failed",
+    "tool.attempt.failed",
+    "tool.attempt.succeeded",
+    "tool.attempt.cancelled",
+    "run.waiting_approval",
+    "approval.recorded",
+    "run.succeeded",
+    "run.failed",
+}
+
+
+def _ordered_trace_evidence(
+    events: Sequence[TraceEvent],
+) -> tuple[OrderedTraceEvidence, ...]:
+    evidence: list[OrderedTraceEvidence] = []
+    for event in events:
+        if event.event_type not in _EVIDENCE_EVENT_TYPES:
+            continue
+        if event.sequence is None:
+            raise EvaluationInfrastructureError("trace event has no durable sequence")
+        evidence.append(
+            OrderedTraceEvidence(
+                sequence=event.sequence,
+                event_type=cast(Any, event.event_type),
+                payload=cast(dict[str, JsonValue], _payload(event)),
+            )
+        )
+        if event.event_type in {"run.succeeded", "run.failed"}:
+            break
+    return tuple(evidence)
 
 
 def _assert_suite_unchanged(
@@ -694,9 +773,12 @@ __all__ = [
     "EvaluationInfrastructureError",
     "accepted_output_evidence",
     "build_suite_manifest",
+    "canonical_action_fingerprint",
     "compare_modes",
     "count_invalid_accepted_outputs",
+    "logical_action_projection",
     "run_evaluation",
     "stable_report_projection",
     "suite_sha256",
+    "trace_evidence_digest",
 ]
