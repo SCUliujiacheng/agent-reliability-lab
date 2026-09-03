@@ -141,6 +141,36 @@ jobs:
       - name: Exercise same-origin HTTP and SQLite persistence
         run: |
           docker compose up --detach --wait --no-build
+
+          python3 -c 'import json; open("oversized-request.json", "w", encoding="utf-8").write(json.dumps({"scenario_id":"normal-success","mode":"resilient","x":"a" * 70_000}))'
+          oversized_status="$(curl --silent --show-error \
+            --dump-header oversized-response.headers \
+            --output oversized-response.json \
+            --write-out '%{http_code}' \
+            --header 'Content-Type: application/json' \
+            --data-binary @oversized-request.json \
+            http://127.0.0.1:8080/v1/runs)"
+          if [ "$oversized_status" != "413" ]; then
+            echo "Expected HTTP 413 for oversized request, received ${oversized_status}" >&2
+            cat oversized-response.json >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from email.parser import Parser
+          from pathlib import Path
+
+          raw_headers = Path("oversized-response.headers").read_text(encoding="utf-8")
+          blocks = [block for block in raw_headers.replace("\r\n", "\n").split("\n\n") if block.strip()]
+          headers = Parser().parsestr("\n".join(blocks[-1].splitlines()[1:]))
+          response = json.loads(Path("oversized-response.json").read_text(encoding="utf-8"))
+
+          assert headers.get_content_type() == "application/json"
+          assert headers["X-Content-Type-Options"] == "nosniff"
+          assert headers["Referrer-Policy"] == "no-referrer"
+          assert response["error"]["code"] == "request_too_large"
+          PY
+
           created="$(curl --fail --silent --show-error \
             --header 'Content-Type: application/json' \
             --data '{"scenario_id":"approval-reconstruction","mode":"resilient"}' \
