@@ -23,7 +23,7 @@ function humanize(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function present(event: TraceEvent, recovered: boolean): TracePresentation {
+function present(event: TraceEvent, retry: boolean, recovered: boolean): TracePresentation {
   const tool = textValue(event.payload.tool_name, "Agent step");
   const attempt = numberValue(event.payload.attempt);
 
@@ -31,7 +31,7 @@ function present(event: TraceEvent, recovered: boolean): TracePresentation {
     case "run.running":
       return { title: "Agent started", meta: "Run entered execution", tone: "active" };
     case "tool.attempt.started":
-      return attempt > 1
+      return retry
         ? { title: `Retry attempt ${attempt} · ${tool}`, meta: "Tool execution", tone: "active" }
         : { title: `${tool} · attempt ${attempt}`, meta: "Tool execution", tone: "neutral" };
     case "fault.injected":
@@ -87,44 +87,166 @@ function logicalAction(event: TraceEvent): string | null {
   return `${step}:${tool}`;
 }
 
-function recoveredEvents(events: TraceEvent[]): Set<string> {
-  const failedAttempts = new Map<string, number>();
+function attemptNumber(event: TraceEvent): number | null {
+  const attempt = event.payload.attempt;
+  return typeof attempt === "number" && Number.isInteger(attempt) && attempt > 0
+    ? attempt
+    : null;
+}
+
+interface AttemptSemantics {
+  retries: Set<string>;
+  recoveries: Set<string>;
+}
+
+interface ActiveRetryAttempt {
+  attempt: number;
+  spanId: string;
+}
+
+function attemptSemantics(events: TraceEvent[]): AttemptSemantics {
+  const scheduledAfter = new Map<string, number>();
+  const activeRetryAttempt = new Map<string, ActiveRetryAttempt>();
+  const retries = new Set<string>();
   const recovered = new Set<string>();
   for (const event of events) {
     const action = logicalAction(event);
-    const attempt = event.payload.attempt;
-    if (action === null || typeof attempt !== "number" || !Number.isInteger(attempt)) continue;
+    const attempt = attemptNumber(event);
+    if (action === null || attempt === null) continue;
     if (event.event_type === "tool.attempt.failed") {
-      failedAttempts.set(action, Math.max(failedAttempts.get(action) ?? 0, attempt));
+      activeRetryAttempt.delete(action);
+      const delay = event.payload.retry_delay_seconds;
+      if (
+        event.status === "error"
+        && event.payload.transient === true
+        && typeof delay === "number"
+        && Number.isFinite(delay)
+        && delay >= 0
+      ) {
+        scheduledAfter.set(action, attempt);
+      } else {
+        scheduledAfter.delete(action);
+      }
+    } else if (event.event_type === "tool.attempt.started") {
+      const priorAttempt = scheduledAfter.get(action);
+      scheduledAfter.delete(action);
+      if (
+        event.status === "ok"
+        && priorAttempt !== undefined
+        && attempt === priorAttempt + 1
+      ) {
+        retries.add(event.id);
+        activeRetryAttempt.set(action, { attempt, spanId: event.span_id });
+      } else {
+        activeRetryAttempt.delete(action);
+      }
     } else if (event.event_type === "tool.attempt.succeeded") {
-      const failedAttempt = failedAttempts.get(action);
-      if (failedAttempt !== undefined && failedAttempt < attempt) recovered.add(event.id);
+      const retryAttempt = activeRetryAttempt.get(action);
+      if (
+        event.status === "ok"
+        && retryAttempt?.attempt === attempt
+        && retryAttempt.spanId === event.span_id
+      ) recovered.add(event.id);
+      activeRetryAttempt.delete(action);
     }
   }
-  return recovered;
+  return { retries, recoveries: recovered };
 }
 
-function spanDepths(events: TraceEvent[]): Map<string, number> {
+function lineageDepth(
+  event: TraceEvent,
+  parents: ReadonlyMap<string, string | null>,
+): number {
+  let parent = event.parent_span_id;
+  let depth = 0;
+  const visited = new Set([event.span_id]);
+  while (parent !== null && parents.has(parent) && depth < 2) {
+    if (visited.has(parent)) return 0;
+    visited.add(parent);
+    depth += 1;
+    parent = parents.get(parent) ?? null;
+  }
+  return depth;
+}
+
+const ACTION_GROUP_EVENTS = new Set([
+  "tool.attempt.started",
+  "fault.injected",
+  "tool.output.validation_failed",
+  "tool.preflight.failed",
+  "tool.attempt.failed",
+  "tool.attempt.succeeded",
+  "tool.attempt.cancelled",
+  "run.waiting_approval",
+  "approval.requested",
+  "approval.recorded",
+  "approval.denied",
+  "run.checkpointed",
+]);
+
+const ATTEMPT_DETAIL_EVENTS = new Set([
+  "fault.injected",
+  "tool.output.validation_failed",
+  "tool.attempt.failed",
+  "tool.attempt.succeeded",
+  "tool.attempt.cancelled",
+]);
+
+interface ActionRoot {
+  tool: string | null;
+}
+
+function actionStep(event: TraceEvent): number | null {
+  const step = event.payload.action_step;
+  return typeof step === "number" && Number.isInteger(step) && step >= 0 ? step : null;
+}
+
+function belongsToAction(event: TraceEvent, root: ActionRoot): boolean {
+  if (!ACTION_GROUP_EVENTS.has(event.event_type)) return false;
+  const tool = event.payload.tool_name;
+  const toolScoped = event.event_type.startsWith("tool.") || event.event_type === "fault.injected";
+  if (toolScoped) return root.tool !== null && tool === root.tool;
+  return typeof tool !== "string" || root.tool === null || tool === root.tool;
+}
+
+function eventDepths(events: TraceEvent[]): Map<string, number> {
   const parents = new Map<string, string | null>();
   for (const event of events) {
     if (!parents.has(event.span_id)) parents.set(event.span_id, event.parent_span_id);
   }
 
+  const roots = new Map<number, ActionRoot>();
+  const attemptBySpan = new Map<string, string>();
   const depths = new Map<string, number>();
   for (const event of events) {
-    let parent = event.parent_span_id;
-    let depth = 0;
-    const visited = new Set([event.span_id]);
-    while (parent !== null && parents.has(parent) && depth < 2) {
-      if (visited.has(parent)) {
-        depth = 0;
-        break;
-      }
-      visited.add(parent);
-      depth += 1;
-      parent = parents.get(parent) ?? null;
+    const step = actionStep(event);
+    if (event.event_type === "policy.action" && step !== null) {
+      const tool = event.payload.tool_name;
+      roots.set(step, { tool: typeof tool === "string" ? tool : null });
+      depths.set(event.id, 0);
+      continue;
     }
-    depths.set(event.span_id, depth);
+
+    let semanticDepth = 0;
+    const root = step === null ? undefined : roots.get(step);
+    if (root !== undefined && belongsToAction(event, root)) {
+      semanticDepth = 1;
+      const action = logicalAction(event);
+      const attempt = attemptNumber(event);
+      const attemptIdentity = action === null || attempt === null
+        ? null
+        : `${action}:${attempt}`;
+      if (event.event_type === "tool.attempt.started" && attemptIdentity !== null) {
+        attemptBySpan.set(event.span_id, attemptIdentity);
+      } else if (
+        ATTEMPT_DETAIL_EVENTS.has(event.event_type)
+        && attemptIdentity !== null
+        && attemptBySpan.get(event.span_id) === attemptIdentity
+      ) {
+        semanticDepth = 2;
+      }
+    }
+    depths.set(event.id, Math.min(2, Math.max(lineageDepth(event, parents), semanticDepth)));
   }
   return depths;
 }
@@ -153,14 +275,18 @@ export function TraceWaterfall({ events }: TraceWaterfallProps) {
     );
   }
 
-  const recovered = recoveredEvents(events);
-  const depths = spanDepths(events);
+  const attempts = attemptSemantics(events);
+  const depths = eventDepths(events);
 
   return (
     <ol className="trace-list" aria-label="Execution trace">
       {events.map((event) => {
-        const presentation = present(event, recovered.has(event.id));
-        const depth = depths.get(event.span_id) ?? 0;
+        const presentation = present(
+          event,
+          attempts.retries.has(event.id),
+          attempts.recoveries.has(event.id),
+        );
+        const depth = depths.get(event.id) ?? 0;
         return (
           <li
             className={`trace-row trace-row--${presentation.tone} trace-row--depth-${depth}`}
