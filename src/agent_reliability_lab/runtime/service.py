@@ -177,15 +177,15 @@ class RunService:
         finally:
             heartbeat.cancel()
             heartbeat_error = await _stopped_heartbeat_error(heartbeat)
-            try:
-                released = self.store.release_run_execution(
-                    run.id, owner_token=owner_token
-                )
-            except RunExecutionConflictError:
-                if primary_error is None and heartbeat_error is None:
-                    raise
-            if primary_error is None and heartbeat_error is not None:
-                raise heartbeat_error
+            released, release_error = _release_run_execution(
+                self.store, run.id, owner_token=owner_token
+            )
+            if primary_error is None:
+                if heartbeat_error is not None:
+                    raise heartbeat_error
+                if release_error is not None:
+                    raise release_error
+        assert released is not None
         return released
 
     async def _heartbeat(self, run_id: UUID, *, owner_token: str) -> None:
@@ -196,6 +196,7 @@ class RunService:
     def _deny(self, run: Run, *, actor: str, reason: str | None) -> Run:
         owner_token = uuid4().hex
         owned = self.store.claim_run_execution(run.id, owner_token=owner_token)
+        primary_error: BaseException | None = None
         try:
             if owned.status is RunStatus.WAITING_APPROVAL:
                 owned = self.store.save_run_owned(
@@ -217,8 +218,16 @@ class RunService:
                 parent_span_id=owned.trace_id,
                 status="error",
             )
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
-            released = self.store.release_run_execution(run.id, owner_token=owner_token)
+            released, release_error = _release_run_execution(
+                self.store, run.id, owner_token=owner_token
+            )
+            if primary_error is None and release_error is not None:
+                raise release_error
+        assert released is not None
         return released
 
     def _required(self, run_id: UUID) -> Run:
@@ -250,9 +259,18 @@ async def _stopped_heartbeat_error(
         await heartbeat
     except asyncio.CancelledError:
         return None
-    except Exception as error:  # noqa: BLE001 - preserve heartbeat task failures.
+    except BaseException as error:  # noqa: BLE001 - preserve heartbeat task failures.
         return error
     return None
+
+
+def _release_run_execution(
+    store: SQLiteRunStore, run_id: UUID, *, owner_token: str
+) -> tuple[Run | None, BaseException | None]:
+    try:
+        return store.release_run_execution(run_id, owner_token=owner_token), None
+    except BaseException as error:  # noqa: BLE001 - cleanup must not mask primary.
+        return None, error
 
 
 __all__ = ["RunConflictError", "RunNotFoundError", "RunService"]
