@@ -75,8 +75,8 @@ function present(event: TraceEvent): TracePresentation {
   }
 }
 
-function formatDuration(durationMs: number | null): string {
-  if (durationMs === null) return "—";
+function formatDuration(durationMs: number | null | undefined): string {
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs)) return "—";
   if (durationMs >= 1000) return `${(Math.round(durationMs / 100) / 10).toFixed(1)}s`;
   return `${durationMs}ms`;
 }

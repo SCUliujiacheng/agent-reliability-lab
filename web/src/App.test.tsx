@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 
@@ -187,6 +187,53 @@ describe("App workflows", () => {
       await approval.promise;
     });
     expect(await screen.findByText("Succeeded")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Action allowed");
+    await user.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("automatically clears an approval notice before it can persist over controls", async () => {
+    const waiting = runFixture({
+      scenario_id: "approval-reconstruction",
+      status: "waiting_approval",
+      approval_required: true,
+      result: undefined,
+    });
+    const completed = runFixture({
+      ...waiting,
+      status: "succeeded",
+      approval_required: false,
+      result: { outcome: "prepared", evidence_refs: [] },
+    });
+    const base = overviewFetch({ runs: [waiting], evaluation: null });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/trace?limit=100&after_sequence=0")) {
+        return response({ events: [], next_after_sequence: 0, has_more: false });
+      }
+      if (url === `/v1/runs/${waiting.id}` && !init?.method) return response(waiting);
+      if (url.endsWith("/approvals") && init?.method === "POST") return response(completed);
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Open run approval-reconstruction/ }));
+    const allow = await screen.findByRole("button", { name: "Allow action" });
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(allow);
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent("Action allowed");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends deny and refreshes the run after an approval conflict", async () => {

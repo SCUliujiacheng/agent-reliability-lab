@@ -71,7 +71,7 @@ export interface TraceEvent {
   sequence: number;
   event_type: string;
   payload: TracePayload;
-  duration_ms: number | null;
+  duration_ms?: number | null;
   status: string;
   created_at: string;
 }

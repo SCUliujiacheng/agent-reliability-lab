@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 
 import { TraceWaterfall } from "./TraceWaterfall";
 import { traceFixture } from "../test/fixtures";
+import type { TraceEvent } from "../types";
 
 describe("TraceWaterfall", () => {
   it("shows timeout, retry, and recovered in chronological order", () => {
@@ -27,6 +28,32 @@ describe("TraceWaterfall", () => {
 
     expect(screen.getByText(/diagnose_cache/)).toBeVisible();
     expect(screen.getByText("2.2s")).toBeVisible();
+  });
+
+  it("shows a clear placeholder for omitted and non-finite API durations", () => {
+    const omittedDuration = {
+      id: "00000000-0000-0000-0000-000000000090",
+      trace_id: "22222222-2222-2222-2222-222222222222",
+      span_id: "00000000-0000-0000-0000-000000000190",
+      parent_span_id: null,
+      sequence: 1,
+      event_type: "run.running",
+      payload: { from_status: "queued" },
+      status: "ok",
+      created_at: "2026-09-04T10:45:12Z",
+    } satisfies TraceEvent;
+    const nonFiniteDuration = {
+      ...omittedDuration,
+      id: "00000000-0000-0000-0000-000000000091",
+      sequence: 2,
+      duration_ms: Number.POSITIVE_INFINITY,
+    };
+
+    render(<TraceWaterfall events={[omittedDuration, nonFiniteDuration]} />);
+
+    expect(screen.getAllByText("—")).toHaveLength(2);
+    expect(screen.queryByText("undefinedms")).not.toBeInTheDocument();
+    expect(screen.queryByText("Infinityms")).not.toBeInTheDocument();
   });
 
   it("keeps all one hundred events visible with bounded indentation", () => {

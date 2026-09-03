@@ -759,8 +759,12 @@ h2 {
   z-index: 30;
   top: 18px;
   right: 24px;
+  display: flex;
   max-width: calc(100vw - 48px);
-  padding: 11px 15px;
+  min-height: 42px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 7px 6px 15px;
   border: 1px solid #aab9cc;
   border-radius: 5px;
   color: var(--ink);
@@ -768,6 +772,24 @@ h2 {
   box-shadow: 0 8px 24px rgb(7 24 44 / 12%);
   font-size: 0.78rem;
   font-weight: 720;
+}
+
+.mutation-notice__dismiss {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: #4f5d71;
+  background: transparent;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.mutation-notice__dismiss:hover {
+  background: #eef1f5;
 }
 
 .detail-loading {

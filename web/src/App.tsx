@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { ApiClientError, approveRun, createRun } from "./api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { MutationNotice } from "./components/MutationNotice";
 import { Navigation } from "./components/Navigation";
 import { Overview } from "./components/Overview";
 import { RunDetail, type MutationState } from "./components/RunDetail";
@@ -16,6 +17,7 @@ function Dashboard() {
   const [mutationState, setMutationState] = useState<MutationState>("idle");
   const [notice, setNotice] = useState("");
   const approvalInFlight = useRef(false);
+  const dismissNotice = useCallback(() => setNotice(""), []);
 
   const startRun = async (scenarioId: string, mode: RunMode) => {
     if (mutationState === "pending") return;
@@ -66,7 +68,7 @@ function Dashboard() {
     <div className="app-shell">
       <Navigation />
       <div className="app-content">
-        {notice ? <div className="mutation-notice" role="status">{notice}</div> : null}
+        {notice ? <MutationNotice message={notice} onDismiss={dismissNotice} /> : null}
         {selectedRunReady && detail.run ? (
           <RunDetail
             run={detail.run}
