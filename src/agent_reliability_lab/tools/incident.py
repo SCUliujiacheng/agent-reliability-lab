@@ -1,6 +1,8 @@
 """Deterministic incident-response tools used by the reliability scenarios."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from agent_reliability_lab.tools.contracts import (
     ToolDefinition,
@@ -145,3 +147,46 @@ def incident_registry(backend: IncidentBackend) -> ToolRegistry:
         )
     )
     return registry
+
+
+def deterministic_incident_output(
+    tool_name: str, arguments: dict[str, Any]
+) -> dict[str, JsonValue] | None:
+    """Return the immutable expected fixture output for one valid built-in call."""
+    if tool_name == "get_service_health" and arguments == {}:
+        return {"service": "checkout", "status": "degraded"}
+    if tool_name == "search_recent_logs" and arguments == {}:
+        return {
+            "entries": [
+                {
+                    "level": "ERROR",
+                    "message": "checkout timeout contacting ledger",
+                }
+            ]
+        }
+    if tool_name == "get_deployment" and arguments == {}:
+        return {
+            "deployment_id": "deploy-2026-09-04-001",
+            "version": "2026.09.04.1",
+        }
+    if tool_name == "prepare_rollback" and set(arguments) == {"deployment_id"}:
+        deployment_id = arguments["deployment_id"]
+        if isinstance(deployment_id, str) and deployment_id:
+            return {"deployment_id": deployment_id, "prepared": True}
+    return None
+
+
+def deterministic_incident_initial_context(
+    scenario_id: str,
+) -> dict[str, JsonValue] | None:
+    """Return the independently frozen initial context for the golden suite."""
+    incident_by_scenario = {
+        "approval-reconstruction": "rollback-candidate",
+        "malformed-output-rejected": "malformed-deployment-response",
+        "normal-success": "checkout-latency",
+        "permanent-invalid-input": "invalid-query",
+        "rate-limit-recovery": "deployment-rate-limit",
+        "timeout-recovery": "checkout-timeout",
+    }
+    incident = incident_by_scenario.get(scenario_id)
+    return {"incident": incident} if incident is not None else None

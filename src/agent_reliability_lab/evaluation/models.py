@@ -38,6 +38,9 @@ class LogicalActionProjection(ReportModel):
     tool_name: str | None = None
     action_payload: dict[str, JsonValue]
     action_fingerprint: str = Field(min_length=64, max_length=64)
+    expected_output_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
 
 
 class SuiteManifestEntry(ReportModel):
@@ -45,6 +48,7 @@ class SuiteManifestEntry(ReportModel):
     scenario_id: str = Field(min_length=1)
     version: int = Field(ge=1)
     scenario_sha256: str = Field(min_length=64, max_length=64)
+    initial_context: dict[str, JsonValue]
     logical_actions: tuple[LogicalActionProjection, ...]
     expected_tool_sequence: tuple[str, ...]
     expected_outcome: str
@@ -83,10 +87,10 @@ class OrderedTraceEvidence(ReportModel):
 
 
 class EvaluationProvenance(ReportModel):
-    report_version: Literal["4"] = "4"
-    schema_version: Literal["4"] = "4"
-    grader_version: Literal["exact-v4"] = "exact-v4"
-    normalization_version: Literal["baseline-v4"] = "baseline-v4"
+    report_version: Literal["5"] = "5"
+    schema_version: Literal["5"] = "5"
+    grader_version: Literal["exact-v5"] = "exact-v5"
+    normalization_version: Literal["baseline-v5"] = "baseline-v5"
     suite_hash: str = Field(min_length=64, max_length=64)
     suite_manifest: tuple[SuiteManifestEntry, ...]
     git_revision: str

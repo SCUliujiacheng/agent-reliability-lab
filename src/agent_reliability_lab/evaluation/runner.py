@@ -49,7 +49,11 @@ from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
 from agent_reliability_lab.tools.contracts import ToolRegistry
 from agent_reliability_lab.tools.gateway import ToolGateway
-from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
+from agent_reliability_lab.tools.incident import (
+    IncidentBackend,
+    deterministic_incident_output,
+    incident_registry,
+)
 
 CaseObserver = Callable[[CaseResult], None]
 _TRANSIENT_FAULTS = {FaultType.TIMEOUT, FaultType.RATE_LIMIT, FaultType.TOOL_ERROR}
@@ -81,6 +85,7 @@ def build_suite_manifest(suite: Path) -> tuple[SuiteManifestEntry, ...]:
                 scenario_id=scenario.id,
                 version=scenario.version,
                 scenario_sha256=scenario_sha256(path),
+                initial_context=cast(dict[str, JsonValue], scenario.initial_context),
                 logical_actions=logical_action_projection(scenario),
                 expected_tool_sequence=scenario.expected_tool_sequence,
                 expected_outcome=scenario.expected_outcome,
@@ -132,9 +137,26 @@ def logical_action_projection(
             tool_name=action.tool_name if isinstance(action, CallToolAction) else None,
             action_payload=cast(dict[str, JsonValue], action.model_dump(mode="json")),
             action_fingerprint=canonical_action_fingerprint(action),
+            expected_output_digest=_expected_output_digest(action),
         )
         for step, action in enumerate(scenario.actions)
     )
+
+
+def _expected_output_digest(action: AgentAction) -> str | None:
+    if not isinstance(action, CallToolAction):
+        return None
+    output = deterministic_incident_output(action.tool_name, action.arguments)
+    if output is None:
+        return None
+    canonical = json.dumps(
+        output,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def trace_evidence_digest(evidence: Sequence[OrderedTraceEvidence]) -> str:

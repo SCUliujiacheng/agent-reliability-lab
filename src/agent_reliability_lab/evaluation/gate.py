@@ -29,7 +29,12 @@ from agent_reliability_lab.evaluation.runner import (
     canonical_action_fingerprint,
     trace_evidence_digest,
 )
-from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
+from agent_reliability_lab.tools.incident import (
+    IncidentBackend,
+    deterministic_incident_initial_context,
+    deterministic_incident_output,
+    incident_registry,
+)
 
 _TRANSIENT_KINDS = {"timeout", "rate_limit", "tool_error"}
 _FAULT_FAILURE = {
@@ -217,6 +222,15 @@ def _manifest_hash(report: EvaluationReport) -> str:
 
 def _case_evidence_errors(case: CaseResult, frozen: SuiteManifestEntry) -> list[str]:
     errors: list[str] = []
+    expected_initial_context = deterministic_incident_initial_context(
+        frozen.scenario_id
+    )
+    if (
+        expected_initial_context is not None
+        and frozen.initial_context != expected_initial_context
+    ):
+        errors.append("case_evidence_mismatch")
+        return errors
     trace = _trace_claims(case, frozen)
     if trace is None:
         errors.append("case_evidence_mismatch")
@@ -351,6 +365,20 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             != action.action_fingerprint
         ):
             return None
+        if action.kind == "call_tool":
+            arguments = action.action_payload.get("arguments")
+            if not isinstance(arguments, dict) or action.tool_name is None:
+                return None
+            expected_output = deterministic_incident_output(action.tool_name, arguments)
+            expected_digest = (
+                _canonical_json_digest(expected_output)
+                if expected_output is not None
+                else None
+            )
+            if action.expected_output_digest != expected_digest:
+                return None
+        elif action.expected_output_digest is not None:
+            return None
 
     seen_actions: dict[int, str] = {}
     last_policy_step = -1
@@ -368,6 +396,9 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
     last_attempt_by_action: dict[tuple[int, str], AttemptEvidence] = {}
     pending_success: tuple[int, str, int, Any] | None = None
     accepted_outputs: list[AcceptedOutputEvidence] = []
+    reconstructed_context = dict(frozen.initial_context)
+    initial_results = reconstructed_context.get("tool_results", {})
+    context_outputs = dict(initial_results) if isinstance(initial_results, dict) else {}
     faults: list[FaultEvidence] = []
     validations: list[OutputValidationEvidence] = []
     waits: list[tuple[int, int, str, str]] = []
@@ -377,10 +408,19 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
     final_result: dict[str, Any] | None = None
     preflight_failure: tuple[int, str, str] | None = None
     denied: tuple[int, str, str, str] | None = None
+    must_fail_preflight: str | None = None
+    must_record_denial: tuple[int, str, str] | None = None
+    must_fail_approval_denied: str | None = None
 
     for item in case.trace_evidence:
         payload = item.payload
         if pending_success is not None and item.event_type != "run.checkpointed":
+            return None
+        if must_fail_preflight is not None and item.event_type != "run.failed":
+            return None
+        if must_record_denial is not None and item.event_type != "approval.denied":
+            return None
+        if must_fail_approval_denied is not None and item.event_type != "run.failed":
             return None
         if terminal_seen:
             return None
@@ -481,6 +521,13 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             if status == "succeeded":
                 if "output" not in payload:
                     return None
+                action = frozen_by_step[identity[0]]
+                if (
+                    action.expected_output_digest is None
+                    or _canonical_json_digest(payload["output"])
+                    != action.expected_output_digest
+                ):
+                    return None
                 pending_success = (*identity, payload["output"])
             continue
 
@@ -527,8 +574,14 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 or not isinstance(cached, bool)
                 or payload.get("output_digest") != _canonical_json_digest(output)
                 or not isinstance(context_digest, str)
-                or len(context_digest) != 64
             ):
+                return None
+            context_outputs[str(step)] = output
+            reconstructed_context = {
+                **reconstructed_context,
+                "tool_results": dict(context_outputs),
+            }
+            if context_digest != _canonical_json_digest(reconstructed_context):
                 return None
             accepted_outputs.append(
                 AcceptedOutputEvidence(
@@ -542,7 +595,12 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             continue
 
         if item.event_type == "tool.preflight.failed":
-            if active_call is None or item.status != "error" or started:
+            if (
+                active_call is None
+                or item.status != "error"
+                or started
+                or preflight_failure is not None
+            ):
                 return None
             try:
                 step = _payload_int(payload, "action_step")
@@ -566,6 +624,7 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             ):
                 return None
             preflight_failure = (step, tool_name, code)
+            must_fail_preflight = code
             continue
 
         if item.event_type == "run.waiting_approval":
@@ -590,6 +649,20 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             allow = payload.get("allow")
             if not isinstance(actor, str) or not isinstance(allow, bool):
                 return None
+            approval_action = frozen_by_step.get(step)
+            if (
+                approval_action is None
+                or fingerprint != approval_action.action_fingerprint
+                or active_call != (step, approval_action.tool_name)
+            ):
+                return None
+            if allow:
+                if must_record_denial is not None or denied is not None:
+                    return None
+            else:
+                if any(previous[4] for previous in approvals):
+                    return None
+                must_record_denial = (step, fingerprint, actor)
             approvals.append((item.sequence, step, fingerprint, actor, allow))
             continue
 
@@ -606,9 +679,14 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 or denied_action is None
                 or fingerprint != denied_action.action_fingerprint
                 or not isinstance(actor, str)
+                or active_call != (step, denied_action.tool_name)
+                or must_record_denial != (step, fingerprint, actor)
+                or any(previous[4] for previous in approvals)
             ):
                 return None
             denied = (step, fingerprint, actor, cast(str, payload.get("reason")))
+            must_record_denial = None
+            must_fail_approval_denied = cast(str, payload.get("reason"))
             continue
 
         if item.event_type == "tool.retry.cancelled":
@@ -654,9 +732,11 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 expected_denied = {"code": "approval_denied", "reason": denied[3]}
                 if payload != expected_denied:
                     return None
+                must_fail_approval_denied = None
             elif preflight_failure is not None:
                 if payload != {"code": preflight_failure[2]}:
                     return None
+                must_fail_preflight = None
             elif not attempts or attempts[-1].status != "failed":
                 return None
             terminal_seen = True
@@ -669,6 +749,9 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
     if (
         started
         or pending_success is not None
+        or must_fail_preflight is not None
+        or must_record_denial is not None
+        or must_fail_approval_denied is not None
         or final_status is None
         or final_result is None
     ):

@@ -1,5 +1,7 @@
 """Regression-gate exactness and anti-tampering behavior."""
 
+import hashlib
+import json
 from pathlib import Path
 from uuid import UUID, uuid5
 
@@ -113,6 +115,54 @@ def _refresh_trace(
             "trace_digest": trace_evidence_digest(trace),
             **updates,
         }
+    )
+
+
+def _attack_digest(value: object) -> str:
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _coordinated_output_rewrite(
+    case: CaseResult,
+    *,
+    action_step: int,
+    output: dict[str, object],
+    initial_context: dict[str, object],
+) -> CaseResult:
+    outputs: dict[str, object] = {}
+    trace: list[OrderedTraceEvidence] = []
+    for item in case.trace_evidence:
+        payload = dict(item.payload)
+        if item.event_type == "tool.attempt.succeeded":
+            step = int(payload["action_step"])
+            if step == action_step:
+                payload["output"] = output
+            outputs[str(step)] = payload["output"]
+        elif item.event_type == "run.checkpointed":
+            step = int(payload["action_step"])
+            accepted = outputs[str(step)]
+            payload["output_digest"] = _attack_digest(accepted)
+            payload["context_digest"] = _attack_digest(
+                {**initial_context, "tool_results": dict(outputs)}
+            )
+        trace.append(item.model_copy(update={"payload": payload}))
+    accepted_outputs = tuple(
+        item.model_copy(update={"output": output})
+        if item.action_step == action_step
+        else item
+        for item in case.accepted_outputs
+    )
+    return _refresh_trace(
+        case,
+        tuple(trace),
+        accepted_outputs=accepted_outputs,
     )
 
 
@@ -1270,6 +1320,372 @@ def test_gate_rejects_faultless_cross_mode_semantic_divergence() -> None:
     changed = fragile.model_copy(update={"store_run_count": 2})
 
     result = enforce_gate(_replace_mode_case(report, "fragile", changed))
+
+    assert result.comparable is False
+    assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_coordinated_success_after_preflight_failure() -> None:
+    report = await run_evaluation(SUITE)
+    output = {"entries": [{"level": "ERROR", "message": "fabricated after preflight"}]}
+    changed_report = report
+    for mode in ("fragile", "resilient"):
+        case = next(
+            item
+            for item in report.modes[mode].cases
+            if item.scenario_id == "permanent-invalid-input"
+        )
+        forged_span = uuid5(case.trace_id, "post-preflight-attempt")
+        trace: list[OrderedTraceEvidence] = []
+        for item in case.trace_evidence:
+            trace.append(item.model_copy(update={"sequence": len(trace) + 1}))
+            if item.event_type == "tool.preflight.failed":
+                started = _new_evidence(
+                    case,
+                    sequence=len(trace) + 1,
+                    event_type="tool.attempt.started",
+                    payload={
+                        "action_step": 0,
+                        "tool_name": "search_recent_logs",
+                        "attempt": 1,
+                    },
+                ).model_copy(update={"span_id": forged_span})
+                succeeded = _new_evidence(
+                    case,
+                    sequence=len(trace) + 2,
+                    event_type="tool.attempt.succeeded",
+                    payload={
+                        "action_step": 0,
+                        "tool_name": "search_recent_logs",
+                        "attempt": 1,
+                        "output": output,
+                    },
+                ).model_copy(update={"span_id": forged_span})
+                checkpoint = _new_evidence(
+                    case,
+                    sequence=len(trace) + 3,
+                    event_type="run.checkpointed",
+                    payload={
+                        "action_step": 0,
+                        "attempt": 1,
+                        "current_step": 1,
+                        "cached": False,
+                        "output_digest": _attack_digest(output),
+                        "context_digest": _attack_digest(
+                            {
+                                "incident": "invalid-query",
+                                "tool_results": {"0": output},
+                            }
+                        ),
+                    },
+                )
+                trace.extend((started, succeeded, checkpoint))
+        changed = _refresh_trace(
+            case,
+            tuple(trace),
+            attempt_evidence=(
+                AttemptEvidence(
+                    action_step=0,
+                    tool_name="search_recent_logs",
+                    attempt=1,
+                    status="succeeded",
+                ),
+            ),
+            attempt_count=1,
+            accepted_outputs=(
+                AcceptedOutputEvidence(
+                    action_step=0,
+                    tool_name="search_recent_logs",
+                    output=output,
+                ),
+            ),
+            accepted_output_count=1,
+        )
+        changed_report = _replace_named_case(changed_report, mode, changed)
+
+    result = enforce_gate(changed_report)
+
+    assert result.comparable is False
+    assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_every_relevant_event_family_after_preflight_failure() -> (
+    None
+):
+    report = await run_evaluation(SUITE)
+    case = next(
+        item
+        for item in report.modes["resilient"].cases
+        if item.scenario_id == "permanent-invalid-input"
+    )
+    attacks = (
+        ("policy.action", {**case.logical_actions[1].action_payload, "action_step": 1}),
+        (
+            "tool.attempt.started",
+            {"action_step": 0, "tool_name": "search_recent_logs", "attempt": 1},
+        ),
+        (
+            "fault.injected",
+            {
+                "action_step": 0,
+                "tool_name": "search_recent_logs",
+                "attempt": 1,
+                "kind": "timeout",
+            },
+        ),
+        (
+            "tool.output.validation_failed",
+            {
+                "action_step": 0,
+                "tool_name": "search_recent_logs",
+                "attempt": 1,
+                "code": "invalid_output",
+                "source": "output_model",
+            },
+        ),
+        (
+            "run.checkpointed",
+            {
+                "action_step": 0,
+                "attempt": 1,
+                "current_step": 1,
+                "cached": False,
+                "output_digest": "a" * 64,
+                "context_digest": "b" * 64,
+            },
+        ),
+        (
+            "tool.attempt.succeeded",
+            {
+                "action_step": 0,
+                "tool_name": "search_recent_logs",
+                "attempt": 1,
+                "output": {"entries": []},
+            },
+        ),
+        (
+            "run.succeeded",
+            {"outcome": "diagnosed", "summary": "forged", "evidence_refs": []},
+        ),
+        ("run.running", {"from_status": "running"}),
+    )
+    for event_type, payload in attacks:
+        trace: list[OrderedTraceEvidence] = []
+        for item in case.trace_evidence:
+            trace.append(item.model_copy(update={"sequence": len(trace) + 1}))
+            if item.event_type == "tool.preflight.failed":
+                trace.append(
+                    _new_evidence(
+                        case,
+                        sequence=len(trace) + 1,
+                        event_type=event_type,
+                        payload=payload,
+                    )
+                )
+        changed = _refresh_trace(case, tuple(trace))
+
+        result = enforce_gate(_replace_named_case(report, "resilient", changed))
+
+        assert result.comparable is False, event_type
+        assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_allow_followed_by_attributed_denial() -> None:
+    report = await run_evaluation(SUITE)
+    case = next(
+        item
+        for item in report.modes["resilient"].cases
+        if item.scenario_id == "approval-reconstruction"
+    )
+    trace: list[OrderedTraceEvidence] = []
+    for item in case.trace_evidence:
+        trace.append(item.model_copy(update={"sequence": len(trace) + 1}))
+        if item.event_type == "approval.recorded":
+            trace.append(
+                _new_evidence(
+                    case,
+                    sequence=len(trace) + 1,
+                    event_type="approval.denied",
+                    payload={
+                        "actor": item.payload["actor"],
+                        "reason": "coordinated denial",
+                        "action_step": item.payload["action_step"],
+                        "action_fingerprint": item.payload["action_fingerprint"],
+                    },
+                )
+            )
+    changed = _refresh_trace(case, tuple(trace))
+
+    result = enforce_gate(_replace_named_case(report, "resilient", changed))
+
+    assert result.comparable is False
+    assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_denial_inserted_after_approved_write_checkpoint() -> None:
+    report = await run_evaluation(SUITE)
+    case = next(
+        item
+        for item in report.modes["resilient"].cases
+        if item.scenario_id == "approval-reconstruction"
+    )
+    approval = next(
+        item for item in case.trace_evidence if item.event_type == "approval.recorded"
+    )
+    trace: list[OrderedTraceEvidence] = []
+    for item in case.trace_evidence:
+        trace.append(item.model_copy(update={"sequence": len(trace) + 1}))
+        if (
+            item.event_type == "run.checkpointed"
+            and item.payload.get("action_step") == 1
+        ):
+            trace.append(
+                _new_evidence(
+                    case,
+                    sequence=len(trace) + 1,
+                    event_type="approval.denied",
+                    payload={
+                        "actor": approval.payload["actor"],
+                        "reason": "too late",
+                        "action_step": approval.payload["action_step"],
+                        "action_fingerprint": approval.payload["action_fingerprint"],
+                    },
+                )
+            )
+    changed = _refresh_trace(case, tuple(trace))
+
+    result = enforce_gate(_replace_named_case(report, "resilient", changed))
+
+    assert result.comparable is False
+    assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_arbitrary_checkpoint_context_digest() -> None:
+    report = await run_evaluation(SUITE)
+    case = next(
+        item
+        for item in report.modes["resilient"].cases
+        if item.scenario_id == "normal-success"
+    )
+    trace = tuple(
+        item.model_copy(
+            update={"payload": {**item.payload, "context_digest": "d" * 64}}
+        )
+        if item.event_type == "run.checkpointed"
+        else item
+        for item in case.trace_evidence
+    )
+    changed = _refresh_trace(case, trace)
+
+    result = enforce_gate(_replace_named_case(report, "resilient", changed))
+
+    assert result.comparable is False
+    assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_dual_mode_schema_valid_output_rewrite() -> None:
+    report = await run_evaluation(SUITE)
+    fabricated = {
+        "entries": [{"level": "INFO", "message": "fabricated but schema-valid"}]
+    }
+    fabricated_digest = _attack_digest(fabricated)
+    changed_report = report
+    for mode in ("fragile", "resilient"):
+        case = next(
+            item
+            for item in report.modes[mode].cases
+            if item.scenario_id == "normal-success"
+        )
+        changed = _coordinated_output_rewrite(
+            case,
+            action_step=1,
+            output=fabricated,
+            initial_context={"incident": "checkout-latency"},
+        )
+        changed_actions = tuple(
+            action.model_copy(update={"expected_output_digest": fabricated_digest})
+            if action.action_step == 1
+            else action
+            for action in case.logical_actions
+        )
+        changed = changed.model_copy(update={"logical_actions": changed_actions})
+        changed_report = _replace_named_case(changed_report, mode, changed)
+    manifest = tuple(
+        entry.model_copy(
+            update={
+                "logical_actions": tuple(
+                    action.model_copy(
+                        update={"expected_output_digest": fabricated_digest}
+                    )
+                    if action.action_step == 1
+                    else action
+                    for action in entry.logical_actions
+                )
+            }
+        )
+        if entry.scenario_id == "normal-success"
+        else entry
+        for entry in report.provenance.suite_manifest
+    )
+    changed_report = changed_report.model_copy(
+        update={
+            "provenance": changed_report.provenance.model_copy(
+                update={
+                    "suite_manifest": manifest,
+                    "suite_hash": suite_sha256(manifest),
+                }
+            )
+        }
+    )
+
+    result = enforce_gate(changed_report)
+
+    assert result.comparable is False
+    assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_coordinated_frozen_initial_context_rewrite() -> None:
+    report = await run_evaluation(SUITE)
+    fabricated_context = {"incident": "rewritten-context"}
+    changed_report = report
+    for mode in ("fragile", "resilient"):
+        case = next(
+            item
+            for item in report.modes[mode].cases
+            if item.scenario_id == "normal-success"
+        )
+        changed = _coordinated_output_rewrite(
+            case,
+            action_step=99,
+            output={},
+            initial_context=fabricated_context,
+        )
+        changed_report = _replace_named_case(changed_report, mode, changed)
+    manifest = tuple(
+        entry.model_copy(update={"initial_context": fabricated_context})
+        if entry.scenario_id == "normal-success"
+        else entry
+        for entry in report.provenance.suite_manifest
+    )
+    changed_report = changed_report.model_copy(
+        update={
+            "provenance": changed_report.provenance.model_copy(
+                update={
+                    "suite_manifest": manifest,
+                    "suite_hash": suite_sha256(manifest),
+                }
+            )
+        }
+    )
+
+    result = enforce_gate(changed_report)
 
     assert result.comparable is False
     assert "case_evidence_mismatch" in result.infrastructure_errors

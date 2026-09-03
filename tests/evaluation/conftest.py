@@ -29,6 +29,7 @@ from agent_reliability_lab.evaluation.runner import (
     suite_sha256,
     trace_evidence_digest,
 )
+from agent_reliability_lab.tools.incident import deterministic_incident_output
 
 
 def _fixture_digest(value: object) -> str:
@@ -115,7 +116,10 @@ def make_case(
                 if index < invalid_accepted
                 else {
                     "entries": [
-                        {"level": "ERROR", "message": "synthetic benchmark log"}
+                        {
+                            "level": "ERROR",
+                            "message": "checkout timeout contacting ledger",
+                        }
                     ]
                 }
             ),
@@ -148,6 +152,17 @@ def make_case(
             ),
             action_payload=payload,
             action_fingerprint=canonical_action_fingerprint(payload),
+            expected_output_digest=(
+                _fixture_digest(expected_output)
+                if payload["type"] == "call_tool"
+                and (
+                    expected_output := deterministic_incident_output(
+                        str(payload["tool_name"]), payload["arguments"]
+                    )
+                )
+                is not None
+                else None
+            ),
         )
         for step, payload in enumerate(action_payloads)
     )
@@ -180,6 +195,7 @@ def make_case(
         sequence += 1
 
     record("run.running", {"from_status": "queued"})
+    context_outputs: dict[str, object] = {}
     for step, payload in enumerate(call_payloads):
         record("policy.action", {**payload, "action_step": step})
         attempt_span = uuid5(trace_id, f"attempt:{step}:1")
@@ -226,6 +242,7 @@ def make_case(
                 output = next(
                     item.output for item in accepted_outputs if item.action_step == step
                 )
+                context_outputs[str(step)] = output
                 record(
                     "tool.attempt.succeeded",
                     {
@@ -244,7 +261,9 @@ def make_case(
                         "current_step": step + 1,
                         "cached": False,
                         "output_digest": _fixture_digest(output),
-                        "context_digest": "c" * 64,
+                        "context_digest": _fixture_digest(
+                            {"tool_results": dict(context_outputs)}
+                        ),
                     },
                 )
         else:
@@ -261,6 +280,7 @@ def make_case(
                 },
                 span_id=attempt_span,
             )
+            context_outputs[str(step)] = output
             record(
                 "run.checkpointed",
                 {
@@ -269,7 +289,9 @@ def make_case(
                     "current_step": step + 1,
                     "cached": False,
                     "output_digest": _fixture_digest(output),
-                    "context_digest": "c" * 64,
+                    "context_digest": _fixture_digest(
+                        {"tool_results": dict(context_outputs)}
+                    ),
                 },
             )
     final_status = "succeeded" if terminal_success else "failed"
@@ -376,6 +398,7 @@ def make_report(
             scenario_id=case.scenario_id,
             version=1,
             scenario_sha256=case.scenario_sha256,
+            initial_context={},
             logical_actions=case.logical_actions,
             expected_tool_sequence=case.expected_tool_sequence,
             expected_outcome=case.expected_outcome,
@@ -385,10 +408,10 @@ def make_report(
         for case in resilient_cases
     )
     provenance = EvaluationProvenance(
-        report_version="4",
-        schema_version="4",
-        grader_version="exact-v4",
-        normalization_version="baseline-v4",
+        report_version="5",
+        schema_version="5",
+        grader_version="exact-v5",
+        normalization_version="baseline-v5",
         suite_hash=suite_hash or suite_sha256(manifest),
         suite_manifest=manifest,
         git_revision="f" * 40,

@@ -51,6 +51,19 @@ def test_suite_hash_uses_exact_bytes_and_sorted_posix_relative_paths(
     assert suite_sha256(build_suite_manifest(suite)) != original
 
 
+def test_manifest_freezes_initial_context_and_builtin_output_digests() -> None:
+    manifest = build_suite_manifest(SUITE)
+    normal = next(entry for entry in manifest if entry.scenario_id == "normal-success")
+
+    assert normal.initial_context == {"incident": "checkout-latency"}
+    assert [action.expected_output_digest for action in normal.logical_actions] == [
+        "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554",
+        "45112e3d9ff043c3795d157767652406be9df268488c53f9aa2899f470c427d6",
+        "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0",
+        None,
+    ]
+
+
 @pytest.mark.asyncio
 async def test_frozen_suite_produces_credible_fragile_resilient_contrast() -> None:
     report = await run_evaluation(SUITE, modes=("fragile", "resilient"))
