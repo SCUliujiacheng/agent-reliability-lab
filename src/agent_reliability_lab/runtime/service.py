@@ -10,6 +10,7 @@ from agent_reliability_lab.domain.scenarios import Scenario
 from agent_reliability_lab.runtime.orchestrator import DurableOrchestrator
 from agent_reliability_lab.runtime.policies import Policy, ScriptedPolicy
 from agent_reliability_lab.storage.store import (
+    ConcurrentUpdateError,
     RunExecutionConflictError,
     SQLiteRunStore,
 )
@@ -130,29 +131,27 @@ class RunService:
                 action_fingerprint=fingerprint,
                 reason=reason,
             )
-        except ValueError:
+        except ValueError as error:
             self._rejected(run, "approval.rejected", "decision_conflict")
-            raise
+            raise ValueError("approval decision conflict") from error
+        run = self._required(run_id)
         if run.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
             return run
-        self._recorder.record(
-            run.trace_id,
-            "approval.recorded",
-            {
-                "actor": actor,
-                "allow": allow,
-                "action_step": action_step,
-                "action_fingerprint": fingerprint,
-            },
-            parent_span_id=run.trace_id,
-        )
 
         if run.status not in {RunStatus.WAITING_APPROVAL, RunStatus.RUNNING}:
             self._rejected(run, "approval.rejected", "not_waiting")
             raise RunConflictError("run is not waiting for approval")
-        if decision["allow"] is not True:
-            return self._deny(run, actor=actor, reason=reason)
-        return await self.resume(run_id)
+        try:
+            if decision["allow"] is not True:
+                return self._deny(run, actor=actor, reason=reason)
+            scenario = self.load_scenario(run.scenario_id)
+            return await self._execute_owned(
+                run, scenario, self._policy(run.policy_name)
+            )
+        except (ConcurrentUpdateError, RunExecutionConflictError):
+            return await self._await_approval_completion(
+                run_id, action_step=action_step
+            )
 
     def get(self, run_id: UUID) -> Run:
         return self._required(run_id)
@@ -192,6 +191,24 @@ class RunService:
         while True:
             await self._heartbeat_sleeper(self._heartbeat_interval_seconds)
             self.store.renew_run_execution(run_id, owner_token=owner_token)
+
+    async def _await_approval_completion(
+        self, run_id: UUID, *, action_step: int
+    ) -> Run:
+        """Converge an exact concurrent retry on the durable winner's result."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + min(self.store.run_lease_seconds + 1.0, 31.0)
+        while loop.time() < deadline:
+            current = self._required(run_id)
+            if current.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
+                return current
+            if (
+                current.current_step > action_step
+                and current.status is RunStatus.WAITING_APPROVAL
+            ):
+                return current
+            await asyncio.sleep(0.01)
+        raise RunConflictError("approval decision is still processing")
 
     def _deny(self, run: Run, *, actor: str, reason: str | None) -> Run:
         action_step = run.current_step

@@ -1,9 +1,11 @@
 """Transactional SQLite persistence for runs and audit records."""
 
+from __future__ import annotations
+
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
@@ -34,6 +36,9 @@ from agent_reliability_lab.storage.models import (
     TraceEvent,
 )
 from agent_reliability_lab.storage.sanitization import sanitize_payload
+
+if TYPE_CHECKING:
+    from agent_reliability_lab.evaluation.models import EvaluationReport
 
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -118,6 +123,16 @@ class EvaluationRow(Base):
     payload: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class EvaluationReportRow(Base):
+    """One immutable strict report, independent of any individual run."""
+
+    __tablename__ = "evaluation_reports"
+    evaluation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    suite_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    generated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class SQLiteRunStore:
     """Synchronous SQLite store with transactional concurrency boundaries."""
 
@@ -155,7 +170,7 @@ class SQLiteRunStore:
         clock: Callable[[], datetime] | None = None,
         claim_lease_seconds: float = 30.0,
         run_lease_seconds: float = 30.0,
-    ) -> "SQLiteRunStore":
+    ) -> SQLiteRunStore:
         """Construct a SQLite store from settings validated by the same boundary."""
         return cls(
             settings,
@@ -171,6 +186,11 @@ class SQLiteRunStore:
     def close(self) -> None:
         """Release pooled SQLite handles before a store's owned path is removed."""
         self._engine.dispose()
+
+    def ping(self) -> None:
+        """Verify that the configured database can execute a read."""
+        with self._session() as session:
+            session.execute(select(1)).scalar_one()
 
     @property
     def run_lease_seconds(self) -> float:
@@ -331,6 +351,7 @@ class SQLiteRunStore:
             )
             if changed.rowcount != 1:
                 raise RunExecutionConflictError("run has a live owner")
+            session.refresh(row)
             lease = session.get(RunExecutionLeaseRow, str(run_id))
             return _with_execution_lease(Run.model_validate_json(row.payload), lease)
 
@@ -427,24 +448,53 @@ class SQLiteRunStore:
                 .where(EventRow.trace_id == str(trace_id))
                 .order_by(EventRow.sequence, EventRow.id)
             )
-            return [
-                TraceEvent(
-                    id=UUID(row.id),
-                    trace_id=UUID(row.trace_id),
-                    span_id=UUID(row.span_id),
-                    parent_span_id=UUID(row.parent_span_id)
-                    if row.parent_span_id
-                    else None,
-                    sequence=row.sequence,
-                    event_type=row.event_type,
-                    payload=_load(row.payload),
-                    attributes=_load(row.attributes),
-                    duration_ms=row.duration_ms,
-                    status=row.status,
-                    created_at=datetime.fromisoformat(row.created_at),
+            return [_trace_event(row) for row in rows]
+
+    def list_events_page(
+        self, trace_id: UUID, *, after_sequence: int = 0, limit: int = 100
+    ) -> tuple[list[TraceEvent], bool]:
+        """Return one bounded cursor page using the durable sequence index."""
+        if after_sequence < 0:
+            raise ValueError("after_sequence must not be negative")
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._session() as session:
+            rows = list(
+                session.scalars(
+                    select(EventRow)
+                    .where(
+                        EventRow.trace_id == str(trace_id),
+                        EventRow.sequence > after_sequence,
+                    )
+                    .order_by(EventRow.sequence, EventRow.id)
+                    .limit(limit + 1)
                 )
-                for row in rows
-            ]
+            )
+        return [_trace_event(row) for row in rows[:limit]], len(rows) > limit
+
+    def count_events_by_trace(
+        self,
+        trace_ids: Sequence[UUID],
+        *,
+        event_type: str = "tool.attempt.started",
+    ) -> dict[UUID, int]:
+        """Count one event type for many traces with a single aggregate query."""
+        unique = tuple(dict.fromkeys(trace_ids))
+        counts = {trace_id: 0 for trace_id in unique}
+        if not unique:
+            return counts
+        with self._session() as session:
+            rows = session.execute(
+                select(EventRow.trace_id, func.count(EventRow.id))
+                .where(
+                    EventRow.trace_id.in_(str(trace_id) for trace_id in unique),
+                    EventRow.event_type == event_type,
+                )
+                .group_by(EventRow.trace_id)
+            )
+            for trace_id, count in rows:
+                counts[UUID(trace_id)] = int(count)
+        return counts
 
     def get_tool_claim(self, run_id: UUID, idempotency_key: str) -> ToolClaim:
         """Return typed status, including an explicit absent state."""
@@ -702,13 +752,14 @@ class SQLiteRunStore:
         action_fingerprint: str,
         reason: str | None = None,
     ) -> dict[str, object]:
-        """Insert one action-bound decision, accepting only exact retries."""
+        """Atomically persist one decision and its single trace audit event."""
         if action_step < 0:
             raise ValueError("approval action_step must not be negative")
         if len(action_fingerprint) != 64 or any(
             character not in "0123456789abcdef" for character in action_fingerprint
         ):
             raise ValueError("approval action fingerprint must be canonical SHA-256")
+        now = self._aware_now()
         with self._session.begin() as session:
             result = cast(
                 CursorResult[Any],
@@ -721,7 +772,7 @@ class SQLiteRunStore:
                         actor=actor,
                         allow=allow,
                         reason=reason,
-                        recorded_at=self._aware_now().isoformat(),
+                        recorded_at=now.isoformat(),
                     )
                     .on_conflict_do_nothing()
                 ),
@@ -735,6 +786,43 @@ class SQLiteRunStore:
                 or row.action_fingerprint != action_fingerprint
             ):
                 raise ValueError("approval decision conflict")
+            if result.rowcount == 1:
+                run_row = session.get(RunRow, str(run_id))
+                if run_row is None:  # pragma: no cover - guarded by the foreign key.
+                    raise LookupError(f"run not found: {run_id}")
+                next_sequence = session.execute(
+                    insert(TraceCounterRow)
+                    .values(trace_id=run_row.trace_id, next_sequence=1)
+                    .on_conflict_do_update(
+                        index_elements=[TraceCounterRow.trace_id],
+                        set_={"next_sequence": TraceCounterRow.next_sequence + 1},
+                    )
+                    .returning(TraceCounterRow.next_sequence)
+                ).scalar_one()
+                clean_payload = sanitize_payload(
+                    {
+                        "actor": actor,
+                        "allow": allow,
+                        "action_step": action_step,
+                        "action_fingerprint": action_fingerprint,
+                    },
+                    self._secret_values,
+                )
+                session.add(
+                    EventRow(
+                        id=str(uuid4()),
+                        trace_id=run_row.trace_id,
+                        span_id=str(uuid4()),
+                        parent_span_id=run_row.trace_id,
+                        sequence=next_sequence,
+                        event_type="approval.recorded",
+                        payload=_dump(clean_payload),
+                        attributes=_dump({}),
+                        duration_ms=None,
+                        status="ok",
+                        created_at=now.isoformat(),
+                    )
+                )
             return _approval(row)
 
     def get_approval(
@@ -783,6 +871,56 @@ class SQLiteRunStore:
             row = session.get(EvaluationRow, (str(run_id), evaluation_name))
             return _load(row.payload) if row is not None else None
 
+    def save_evaluation_report(
+        self, report: EvaluationReport, *, suite_name: str
+    ) -> None:
+        """Insert an immutable strict report; exact retries are idempotent."""
+        payload = _dump(report)
+        with self._session.begin() as session:
+            session.execute(
+                insert(EvaluationReportRow)
+                .values(
+                    evaluation_id=str(report.evaluation_id),
+                    suite_name=suite_name,
+                    generated_at=report.generated_at.isoformat(),
+                    payload=payload,
+                )
+                .on_conflict_do_nothing()
+            )
+            row = session.get(EvaluationReportRow, str(report.evaluation_id))
+            if row is None:
+                raise RuntimeError("evaluation report insert was not visible")
+            if row.payload != payload or row.suite_name != suite_name:
+                raise ValueError("evaluation reports are immutable")
+
+    def get_evaluation_report(self, evaluation_id: UUID) -> EvaluationReport | None:
+        from agent_reliability_lab.evaluation.models import EvaluationReport
+
+        with self._session() as session:
+            row = session.get(EvaluationReportRow, str(evaluation_id))
+            return (
+                EvaluationReport.model_validate_json(row.payload)
+                if row is not None
+                else None
+            )
+
+    def list_evaluation_reports(self, *, limit: int = 100) -> list[EvaluationReport]:
+        """Return immutable reports newest-first with a stable UUID tie-break."""
+        from agent_reliability_lab.evaluation.models import EvaluationReport
+
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._session() as session:
+            rows = session.scalars(
+                select(EvaluationReportRow)
+                .order_by(
+                    EvaluationReportRow.generated_at.desc(),
+                    EvaluationReportRow.evaluation_id.desc(),
+                )
+                .limit(limit)
+            )
+            return [EvaluationReport.model_validate_json(row.payload) for row in rows]
+
     def _aware_now(self) -> datetime:
         now = self._clock()
         if now.tzinfo is None:
@@ -796,6 +934,22 @@ def _configure_sqlite_connection(connection: Any, _: Any) -> None:
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA busy_timeout=30000")
     cursor.close()
+
+
+def _trace_event(row: EventRow) -> TraceEvent:
+    return TraceEvent(
+        id=UUID(row.id),
+        trace_id=UUID(row.trace_id),
+        span_id=UUID(row.span_id),
+        parent_span_id=UUID(row.parent_span_id) if row.parent_span_id else None,
+        sequence=row.sequence,
+        event_type=row.event_type,
+        payload=_load(row.payload),
+        attributes=_load(row.attributes),
+        duration_ms=row.duration_ms,
+        status=row.status,
+        created_at=datetime.fromisoformat(row.created_at),
+    )
 
 
 def _database_url(settings: Settings) -> str:

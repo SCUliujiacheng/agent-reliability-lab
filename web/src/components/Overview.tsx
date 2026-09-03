@@ -1,0 +1,148 @@
+import type { EvaluationReport, LoadState, RunMode, RunSummary, ScenarioSummary } from "../types";
+import { EvaluationComparison } from "./EvaluationComparison";
+import { MetricCard } from "./MetricCard";
+import { RunList } from "./RunList";
+import { ScenarioLauncher } from "./ScenarioLauncher";
+
+interface OverviewProps {
+  state: LoadState;
+  runs: RunSummary[];
+  evaluation: EvaluationReport | null;
+  scenarios: ScenarioSummary[];
+  launching: boolean;
+  onSelectRun: (runId: string) => void;
+  onStart: (scenarioId: string, mode: RunMode) => void;
+  onRetry: () => void;
+}
+
+function formatRate(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+export function Overview({
+  state,
+  runs,
+  evaluation,
+  scenarios,
+  launching,
+  onSelectRun,
+  onStart,
+  onRetry,
+}: OverviewProps) {
+  const resilient = evaluation?.modes.resilient.metrics;
+  const fragile = evaluation?.modes.fragile.metrics;
+  const header = (
+    <header className="overview-header">
+      <div>
+        <p className="eyebrow">Agent Reliability Lab</p>
+        <h1>Deterministic recovery evidence</h1>
+        <p>Compare execution modes, inspect durable traces, and replay controlled reliability scenarios.</p>
+      </div>
+      <div className="overview-header__actions">
+        <span className="environment-label"><span aria-hidden="true" /> Local API</span>
+        <a className="primary-button header-action" href="#scenarios">Run scenario</a>
+      </div>
+    </header>
+  );
+
+  if (state === "error") {
+    return (
+      <main className="overview-page" id="overview">
+        {header}
+        <section className="overview-error" role="alert">
+          <div>
+            <p className="eyebrow">API unavailable</p>
+            <h2>Dashboard data could not be loaded</h2>
+            <p>Check the local API and retry. No partial response data has been displayed.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={onRetry}>Retry dashboard</button>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="overview-page" id="overview">
+      {header}
+
+      <section className="metrics-grid" aria-label="Reliability metrics">
+        <MetricCard
+          label="Resilient correctness"
+          value={formatRate(resilient?.task_correctness_rate)}
+          detail={evaluation ? "Latest evaluation" : "No evaluation report"}
+          tone="positive"
+        />
+        <MetricCard
+          label="Recovery"
+          value={formatRate(resilient?.recovery_rate)}
+          detail="Transient faults recovered"
+          tone="positive"
+        />
+        <MetricCard
+          label="Fragile correctness"
+          value={formatRate(fragile?.task_correctness_rate)}
+          detail="Latest evaluation"
+          tone="fragile"
+        />
+        <MetricCard
+          label="Accepted invalid outputs"
+          value={formatRate(resilient?.invalid_output_rate)}
+          detail="Resilient execution"
+          tone={resilient?.invalid_output_rate === 0 ? "positive" : "fragile"}
+        />
+      </section>
+
+      {evaluation ? (
+        <EvaluationComparison report={evaluation} />
+      ) : (
+        <section className="comparison comparison--empty" id="evaluations">
+          <p className="eyebrow">Latest evaluation</p>
+          <h2>No evaluations yet</h2>
+          <p>Run a catalog suite through the API to populate the benchmark comparison.</p>
+        </section>
+      )}
+
+      <div className="dashboard-grid">
+        <section className="runs-panel" id="runs" aria-labelledby="recent-runs-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Execution history</p>
+              <h2 id="recent-runs-title">Recent runs</h2>
+            </div>
+            <span>{runs.length} visible</span>
+          </div>
+          <RunList runs={runs} state={state} onSelect={onSelectRun} onRetry={onRetry} />
+        </section>
+
+        <aside className="launcher-panel" id="scenarios" aria-labelledby="launcher-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Controlled replay</p>
+              <h2 id="launcher-title">Scenario launcher</h2>
+            </div>
+          </div>
+          <ScenarioLauncher
+            scenarios={scenarios}
+            state={state}
+            launching={launching}
+            onStart={onStart}
+            onRetry={onRetry}
+          />
+        </aside>
+
+        <section className="trace-preview" aria-labelledby="trace-preview-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Execution trace</p>
+              <h2 id="trace-preview-title">Open a run to inspect its waterfall</h2>
+            </div>
+          </div>
+          <div className="preview-steps" aria-hidden="true">
+            <span /><span /><span /><span />
+          </div>
+          <p>Trace events are requested only after a run is selected, keeping the overview bounded.</p>
+        </section>
+      </div>
+    </main>
+  );
+}

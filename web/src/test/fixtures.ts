@@ -1,0 +1,222 @@
+import type {
+  EvaluationReport,
+  ModeMetrics,
+  RunSummary,
+  ScenarioSummary,
+  TraceEvent,
+} from "../types";
+
+export function metricFixture(overrides: Partial<ModeMetrics> = {}): ModeMetrics {
+  return {
+    case_correct_count: 7,
+    case_count: 8,
+    task_correctness_rate: 0.875,
+    terminal_success_count: 7,
+    tool_sequence_accuracy: 0.9,
+    tool_sequence_case_count: 8,
+    recovered_transient_fault_count: 3,
+    transient_fault_count: 4,
+    recovery_rate: 0.75,
+    invalid_output_accepted_count: 0,
+    accepted_output_count: 16,
+    invalid_output_rate: 0,
+    invalid_output_detected_count: 1,
+    invalid_output_rejected_count: 1,
+    malformed_fault_injected_count: 1,
+    unnecessary_call_count: 1,
+    retry_attempt_count: 3,
+    p50_latency_ms: 12.4,
+    p95_latency_ms: 31.8,
+    estimated_input_tokens: 0,
+    estimated_output_tokens: 0,
+    estimated_cost_usd: "0",
+    ...overrides,
+  };
+}
+
+export function evaluationFixture(
+  fragile: Partial<ModeMetrics> = {},
+  resilient: Partial<ModeMetrics> = {},
+): EvaluationReport {
+  return {
+    evaluation_id: "00000000-0000-0000-0000-000000000003",
+    generated_at: "2026-09-04T00:00:00Z",
+    provenance: {
+      report_version: "6",
+      grader_version: "exact-v6",
+      suite_hash: "a".repeat(64),
+      git_revision: "f".repeat(40),
+      git_dirty: false,
+      package_version: "0.1.0",
+    },
+    modes: {
+      fragile: {
+        mode: "fragile",
+        metrics: metricFixture({
+          task_correctness_rate: 0.584,
+          recovery_rate: 0.25,
+          invalid_output_rate: 0.125,
+          p95_latency_ms: 20,
+          ...fragile,
+        }),
+        cases: [],
+      },
+      resilient: {
+        mode: "resilient",
+        metrics: metricFixture({
+          task_correctness_rate: 0.917,
+          recovery_rate: 0.75,
+          invalid_output_rate: 0,
+          p95_latency_ms: 31.8,
+          ...resilient,
+        }),
+        cases: [],
+      },
+    },
+    comparison: {
+      task_correctness_rate_delta: 0.333,
+      recovery_rate_delta: 0.5,
+      tool_sequence_accuracy_delta: 0.1,
+      invalid_output_rate_delta: -0.125,
+      unnecessary_call_count_delta: -1,
+      retry_attempt_count_delta: 3,
+      p50_latency_ms_delta: 4,
+      p95_latency_ms_delta: 11.8,
+      fragile_worse_recovery_scenarios: ["timeout-recovery"],
+    },
+  };
+}
+
+export function runFixture(overrides: Partial<RunSummary> = {}): RunSummary {
+  return {
+    id: "11111111-1111-1111-1111-111111111111",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    scenario_id: "timeout-recovery",
+    mode: "resilient",
+    status: "succeeded",
+    created_at: "2026-09-04T10:45:12Z",
+    updated_at: "2026-09-04T10:45:56.9Z",
+    duration_ms: 44_900,
+    approval_required: false,
+    attempt_count: 4,
+    result: {
+      outcome: "diagnosed",
+      summary: "Recovered after timeout.",
+      evidence_refs: ["health", "logs", "deployment"],
+    },
+    ...overrides,
+  };
+}
+
+export const scenarioFixture: ScenarioSummary = {
+  id: "timeout-recovery",
+  expected_outcome: "diagnosed",
+  expected_tool_sequence: [
+    "get_service_health",
+    "search_recent_logs",
+    "get_deployment",
+  ],
+  faults: [
+    { tool_name: "search_recent_logs", attempt: 1, type: "timeout" },
+  ],
+  approval_required: false,
+};
+
+export const traceFixture: TraceEvent[] = [
+  {
+    id: "00000000-0000-0000-0000-000000000001",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000101",
+    parent_span_id: null,
+    sequence: 1,
+    event_type: "run.running",
+    payload: { from_status: "queued" },
+    duration_ms: 300,
+    status: "ok",
+    created_at: "2026-09-04T10:45:12Z",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000002",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000102",
+    parent_span_id: null,
+    sequence: 2,
+    event_type: "tool.attempt.started",
+    payload: { tool_name: "search_recent_logs", attempt: 1, action_step: 1 },
+    duration_ms: 3700,
+    status: "ok",
+    created_at: "2026-09-04T10:45:12.3Z",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000003",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000102",
+    parent_span_id: null,
+    sequence: 3,
+    event_type: "fault.injected",
+    payload: {
+      tool_name: "search_recent_logs",
+      attempt: 1,
+      action_step: 1,
+      kind: "timeout",
+    },
+    duration_ms: 15_000,
+    status: "error",
+    created_at: "2026-09-04T10:45:16Z",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000004",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000102",
+    parent_span_id: null,
+    sequence: 4,
+    event_type: "tool.attempt.failed",
+    payload: {
+      tool_name: "search_recent_logs",
+      attempt: 1,
+      action_step: 1,
+      code: "tool_timeout",
+      transient: true,
+      retry_delay_seconds: 0.1,
+    },
+    duration_ms: 100,
+    status: "error",
+    created_at: "2026-09-04T10:45:31Z",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000005",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000103",
+    parent_span_id: null,
+    sequence: 5,
+    event_type: "tool.attempt.started",
+    payload: { tool_name: "search_recent_logs", attempt: 2, action_step: 1 },
+    duration_ms: 9800,
+    status: "ok",
+    created_at: "2026-09-04T10:45:31.1Z",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000006",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000103",
+    parent_span_id: null,
+    sequence: 6,
+    event_type: "tool.attempt.succeeded",
+    payload: { tool_name: "search_recent_logs", attempt: 2, action_step: 1 },
+    duration_ms: 3700,
+    status: "ok",
+    created_at: "2026-09-04T10:45:40.9Z",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000007",
+    trace_id: "22222222-2222-2222-2222-222222222222",
+    span_id: "00000000-0000-0000-0000-000000000104",
+    parent_span_id: null,
+    sequence: 7,
+    event_type: "run.succeeded",
+    payload: { outcome: "diagnosed" },
+    duration_ms: 0,
+    status: "ok",
+    created_at: "2026-09-04T10:45:56.9Z",
+  },
+];
