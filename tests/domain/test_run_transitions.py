@@ -26,6 +26,16 @@ def test_transition_returns_an_immutable_run_with_the_requested_status() -> None
     assert running.id == queued.id
 
 
+def test_transition_normalizes_a_runtime_string_status_to_the_enum() -> None:
+    """Returning a raw string status must make this test fail."""
+    queued = Run.new("api-latency", mode="resilient")
+
+    running = queued.transition("running")  # type: ignore[arg-type]
+
+    assert type(running.status) is RunStatus
+    assert running.status is RunStatus.RUNNING
+
+
 def test_settings_rejects_a_database_outside_its_data_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

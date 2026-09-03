@@ -65,8 +65,14 @@ class Run(BaseModel):
 
     def transition(self, status: RunStatus) -> "Run":
         """Return a new run after validating one state-machine transition."""
-        if status not in ALLOWED_TRANSITIONS.get(self.status, set()):
-            raise InvalidTransition(f"cannot transition from {self.status} to {status}")
+        try:
+            next_status = RunStatus(status)
+        except (TypeError, ValueError) as error:
+            raise InvalidTransition(f"unknown run status: {status}") from error
+        if next_status not in ALLOWED_TRANSITIONS.get(self.status, set()):
+            raise InvalidTransition(
+                f"cannot transition from {self.status} to {next_status}"
+            )
         return self.model_copy(
-            update={"status": status, "updated_at": datetime.now(UTC)}
+            update={"status": next_status, "updated_at": datetime.now(UTC)}
         )
