@@ -73,7 +73,11 @@ class DurableOrchestrator:
                     )
                     break
 
-            self._record(run, "policy.action", action.model_dump(mode="json"))
+            self._record(
+                run,
+                "policy.action",
+                {**action.model_dump(mode="json"), "action_step": run.current_step},
+            )
             if isinstance(action, FinishAction):
                 terminal = run.transition(RunStatus.SUCCEEDED).model_copy(
                     update={

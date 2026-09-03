@@ -168,6 +168,10 @@ class SQLiteRunStore:
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
 
+    def close(self) -> None:
+        """Release pooled SQLite handles before a store's owned path is removed."""
+        self._engine.dispose()
+
     @property
     def run_lease_seconds(self) -> float:
         """Expose the lease bound so runtime heartbeat cadence stays inside it."""

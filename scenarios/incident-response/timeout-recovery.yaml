@@ -1,0 +1,21 @@
+id: timeout-recovery
+version: 1
+initial_context:
+  incident: checkout-timeout
+actions:
+  - type: call_tool
+    tool_name: get_service_health
+  - type: call_tool
+    tool_name: search_recent_logs
+  - type: call_tool
+    tool_name: get_deployment
+  - type: finish
+    summary: Investigation recovered after the transient timeout.
+    evidence_refs: [health, logs, deployment]
+    outcome: diagnosed
+expected_tool_sequence: [get_service_health, search_recent_logs, get_deployment]
+expected_outcome: diagnosed
+faults:
+  - tool_name: search_recent_logs
+    attempt: 1
+    type: timeout

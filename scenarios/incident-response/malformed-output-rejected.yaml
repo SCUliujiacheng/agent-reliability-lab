@@ -1,0 +1,18 @@
+id: malformed-output-rejected
+version: 1
+initial_context:
+  incident: malformed-deployment-response
+actions:
+  - type: call_tool
+    tool_name: get_service_health
+  - type: call_tool
+    tool_name: get_deployment
+  - type: finish
+    summary: This action is unreachable after safe schema rejection.
+    outcome: diagnosed
+expected_tool_sequence: [get_service_health, get_deployment]
+expected_outcome: invalid_output
+faults:
+  - tool_name: get_deployment
+    attempt: 1
+    type: malformed_output

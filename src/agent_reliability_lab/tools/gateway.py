@@ -244,7 +244,11 @@ class ToolGateway:
             self._record(
                 run,
                 "tool.attempt.started",
-                {"tool_name": action.tool_name, "attempt": attempt},
+                {
+                    "tool_name": action.tool_name,
+                    "attempt": attempt,
+                    "action_step": run.current_step,
+                },
                 span_id=span_id,
             )
             error: ToolExecutionError
@@ -254,7 +258,10 @@ class ToolGateway:
                     self._record(
                         run,
                         "fault.injected",
-                        injected.model_dump(mode="json"),
+                        {
+                            **injected.model_dump(mode="json"),
+                            "action_step": run.current_step,
+                        },
                         span_id=span_id,
                         status="error",
                     )
@@ -271,7 +278,11 @@ class ToolGateway:
                 self._record(
                     run,
                     "tool.attempt.cancelled",
-                    {"tool_name": action.tool_name, "attempt": attempt},
+                    {
+                        "tool_name": action.tool_name,
+                        "attempt": attempt,
+                        "action_step": run.current_step,
+                    },
                     span_id=span_id,
                     status="error",
                 )
@@ -292,7 +303,11 @@ class ToolGateway:
                 self._record(
                     run,
                     "tool.attempt.succeeded",
-                    {"tool_name": action.tool_name, "attempt": attempt},
+                    {
+                        "tool_name": action.tool_name,
+                        "attempt": attempt,
+                        "action_step": run.current_step,
+                    },
                     span_id=span_id,
                 )
                 return ToolCallResult.succeeded(output, attempts=attempt)
@@ -305,6 +320,7 @@ class ToolGateway:
             payload: dict[str, JsonValue] = {
                 "tool_name": action.tool_name,
                 "attempt": attempt,
+                "action_step": run.current_step,
                 "code": error.code,
                 "transient": error.transient,
             }

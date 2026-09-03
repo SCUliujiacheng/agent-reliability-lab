@@ -1,0 +1,17 @@
+id: normal-success
+version: 1
+initial_context:
+  incident: checkout-latency
+actions:
+  - type: call_tool
+    tool_name: get_service_health
+  - type: call_tool
+    tool_name: search_recent_logs
+  - type: call_tool
+    tool_name: get_deployment
+  - type: finish
+    summary: Checkout degradation traced to the current deployment.
+    evidence_refs: [health, logs, deployment]
+    outcome: diagnosed
+expected_tool_sequence: [get_service_health, search_recent_logs, get_deployment]
+expected_outcome: diagnosed

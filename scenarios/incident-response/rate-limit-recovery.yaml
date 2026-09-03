@@ -1,0 +1,19 @@
+id: rate-limit-recovery
+version: 1
+initial_context:
+  incident: deployment-rate-limit
+actions:
+  - type: call_tool
+    tool_name: get_service_health
+  - type: call_tool
+    tool_name: get_deployment
+  - type: finish
+    summary: Deployment evidence was collected after rate limiting cleared.
+    evidence_refs: [health, deployment]
+    outcome: diagnosed
+expected_tool_sequence: [get_service_health, get_deployment]
+expected_outcome: diagnosed
+faults:
+  - tool_name: get_deployment
+    attempt: 1
+    type: rate_limit

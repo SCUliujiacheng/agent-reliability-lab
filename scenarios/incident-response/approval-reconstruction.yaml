@@ -1,0 +1,19 @@
+id: approval-reconstruction
+version: 1
+initial_context:
+  incident: rollback-candidate
+actions:
+  - type: call_tool
+    tool_name: get_deployment
+  - type: call_tool
+    tool_name: prepare_rollback
+    arguments:
+      deployment_id: deploy-2026-09-04-001
+    idempotency_key: approval-reconstruction-v1
+  - type: finish
+    summary: Rollback was prepared after durable approval reconstruction.
+    evidence_refs: [deployment, approval]
+    outcome: prepared
+expected_tool_sequence: [get_deployment, prepare_rollback]
+expected_outcome: prepared
+approval_supplied: true

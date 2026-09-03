@@ -1,0 +1,14 @@
+id: permanent-invalid-input
+version: 1
+initial_context:
+  incident: invalid-query
+actions:
+  - type: call_tool
+    tool_name: search_recent_logs
+    arguments:
+      unsupported_filter: true
+  - type: finish
+    summary: This action is unreachable after input rejection.
+    outcome: diagnosed
+expected_tool_sequence: [search_recent_logs]
+expected_outcome: invalid_input

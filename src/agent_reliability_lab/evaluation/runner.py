@@ -1,0 +1,584 @@
+"""Golden-suite execution with trace-derived evidence and immutable provenance."""
+
+import hashlib
+import json
+import platform
+import subprocess
+from collections import Counter, defaultdict
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
+from decimal import Decimal
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from time import perf_counter_ns
+from typing import Any, cast
+from uuid import uuid4
+
+from agent_reliability_lab.config import Settings
+from agent_reliability_lab.domain.actions import CallToolAction
+from agent_reliability_lab.domain.runs import Run, RunStatus
+from agent_reliability_lab.domain.scenarios import FaultType, Scenario
+from agent_reliability_lab.evaluation.graders import (
+    aggregate_cases,
+    tool_sequence_grade,
+    unnecessary_call_count,
+)
+from agent_reliability_lab.evaluation.models import (
+    CaseResult,
+    EffectiveConfiguration,
+    EvaluationMode,
+    EvaluationProvenance,
+    EvaluationReport,
+    FaultEvidence,
+    ModeComparison,
+    ModeResult,
+    SuiteManifestEntry,
+)
+from agent_reliability_lab.runtime.service import RunService
+from agent_reliability_lab.scenarios.loader import load_scenario, scenario_sha256
+from agent_reliability_lab.storage.models import TraceEvent
+from agent_reliability_lab.storage.store import SQLiteRunStore
+from agent_reliability_lab.telemetry.recorder import TraceRecorder
+from agent_reliability_lab.tools.gateway import ToolGateway
+from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
+
+CaseObserver = Callable[[CaseResult], None]
+_TRANSIENT_FAULTS = {FaultType.TIMEOUT, FaultType.RATE_LIMIT, FaultType.TOOL_ERROR}
+
+
+class EvaluationInfrastructureError(RuntimeError):
+    """Raised when suite or trace evidence cannot support benchmark claims."""
+
+
+def build_suite_manifest(suite: Path) -> tuple[SuiteManifestEntry, ...]:
+    """Read a POSIX-path-sorted manifest using exact scenario file bytes."""
+    root = suite.resolve()
+    if not root.is_dir():
+        raise EvaluationInfrastructureError(f"suite is not a directory: {suite}")
+    entries: list[SuiteManifestEntry] = []
+    seen_ids: set[str] = set()
+    for path in sorted(
+        root.rglob("*.yaml"), key=lambda value: value.relative_to(root).as_posix()
+    ):
+        scenario = load_scenario(path)
+        if scenario.id in seen_ids:
+            raise EvaluationInfrastructureError(
+                f"duplicate scenario id in suite: {scenario.id}"
+            )
+        seen_ids.add(scenario.id)
+        entries.append(
+            SuiteManifestEntry(
+                relative_path=path.relative_to(root).as_posix(),
+                scenario_id=scenario.id,
+                version=scenario.version,
+                scenario_sha256=scenario_sha256(path),
+            )
+        )
+    if not entries:
+        raise EvaluationInfrastructureError("suite contains no YAML scenarios")
+    return tuple(entries)
+
+
+def suite_sha256(manifest: Sequence[SuiteManifestEntry]) -> str:
+    """Hash canonical JSON for the exact-byte suite manifest."""
+    canonical = json.dumps(
+        [entry.model_dump(mode="json") for entry in manifest],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+async def run_evaluation(
+    suite: Path,
+    modes: Sequence[EvaluationMode] = ("fragile", "resilient"),
+    *,
+    case_observer: CaseObserver | None = None,
+) -> EvaluationReport:
+    """Run identical frozen scenarios in requested modes with isolated stores."""
+    requested_modes = tuple(modes)
+    if not requested_modes or len(set(requested_modes)) != len(requested_modes):
+        raise EvaluationInfrastructureError(
+            "evaluation modes must be unique and non-empty"
+        )
+    if any(mode not in {"fragile", "resilient"} for mode in requested_modes):
+        raise EvaluationInfrastructureError("unknown evaluation mode")
+
+    root = suite.resolve()
+    manifest = build_suite_manifest(root)
+    initial_hash = suite_sha256(manifest)
+    scenarios = [load_scenario(root / entry.relative_path) for entry in manifest]
+    for scenario in scenarios:
+        _validate_fault_targets(scenario)
+    revision, dirty = _git_provenance(root)
+
+    mode_results: dict[EvaluationMode, ModeResult] = {}
+    for mode in requested_modes:
+        cases: list[CaseResult] = []
+        for entry, scenario in zip(manifest, scenarios, strict=True):
+            case = await _run_case(entry, scenario, mode)
+            cases.append(case)
+            if case_observer is not None:
+                case_observer(case)
+            _assert_suite_unchanged(root, manifest, initial_hash)
+        case_tuple = tuple(cases)
+        mode_results[mode] = ModeResult(
+            mode=mode,
+            cases=case_tuple,
+            metrics=aggregate_cases(case_tuple),
+        )
+    _assert_suite_unchanged(root, manifest, initial_hash)
+
+    provenance = EvaluationProvenance(
+        suite_hash=initial_hash,
+        suite_manifest=manifest,
+        git_revision=revision,
+        git_dirty=dirty,
+        effective_configuration=EffectiveConfiguration(),
+        python_version=platform.python_version(),
+        package_version=_package_version(),
+    )
+    report = EvaluationReport(
+        evaluation_id=uuid4(),
+        generated_at=datetime.now(UTC),
+        provenance=provenance,
+        modes=mode_results,
+    )
+    if {"fragile", "resilient"}.issubset(mode_results):
+        report = report.model_copy(update={"comparison": compare_modes(report)})
+    return report
+
+
+def compare_modes(report: EvaluationReport) -> ModeComparison:
+    """Return resilient-minus-fragile deltas and exact recovery-case losses."""
+    fragile = report.modes.get("fragile")
+    resilient = report.modes.get("resilient")
+    if fragile is None or resilient is None:
+        raise EvaluationInfrastructureError("comparison requires both modes")
+    fragile_by_id = {case.scenario_id: case for case in fragile.cases}
+    resilient_by_id = {case.scenario_id: case for case in resilient.cases}
+    if set(fragile_by_id) != set(resilient_by_id):
+        raise EvaluationInfrastructureError("mode scenario sets differ")
+    worse = tuple(
+        sorted(
+            scenario_id
+            for scenario_id, resilient_case in resilient_by_id.items()
+            if resilient_case.recovered_transient_fault_count > 0
+            and fragile_by_id[scenario_id].correct is False
+            and resilient_case.correct is True
+        )
+    )
+    left = fragile.metrics
+    right = resilient.metrics
+    recovery_delta = (
+        None
+        if left.recovery_rate is None or right.recovery_rate is None
+        else right.recovery_rate - left.recovery_rate
+    )
+    return ModeComparison(
+        task_correctness_rate_delta=(
+            right.task_correctness_rate - left.task_correctness_rate
+        ),
+        recovery_rate_delta=recovery_delta,
+        tool_sequence_accuracy_delta=(
+            right.tool_sequence_accuracy - left.tool_sequence_accuracy
+        ),
+        invalid_output_rate_delta=(
+            right.invalid_output_rate - left.invalid_output_rate
+        ),
+        unnecessary_call_count_delta=(
+            right.unnecessary_call_count - left.unnecessary_call_count
+        ),
+        retry_attempt_count_delta=(
+            right.retry_attempt_count - left.retry_attempt_count
+        ),
+        p50_latency_ms_delta=right.p50_latency_ms - left.p50_latency_ms,
+        p95_latency_ms_delta=right.p95_latency_ms - left.p95_latency_ms,
+        fragile_worse_recovery_scenarios=worse,
+    )
+
+
+def stable_report_projection(report: EvaluationReport) -> dict[str, object]:
+    """Remove volatile identities/timing while retaining measured correctness evidence."""
+    payload = report.model_dump(mode="json")
+    payload.pop("evaluation_id", None)
+    payload.pop("generated_at", None)
+    provenance = cast(dict[str, object], payload["provenance"])
+    provenance.pop("git_revision", None)
+    provenance.pop("git_dirty", None)
+    modes = cast(dict[str, dict[str, object]], payload["modes"])
+    for result in modes.values():
+        metrics = cast(dict[str, object], result["metrics"])
+        metrics.pop("p50_latency_ms", None)
+        metrics.pop("p95_latency_ms", None)
+        for case in cast(list[dict[str, object]], result["cases"]):
+            case.pop("run_id", None)
+            case.pop("trace_id", None)
+            case.pop("trace_digest", None)
+            case.pop("latency_ns", None)
+    comparison = payload.get("comparison")
+    if isinstance(comparison, dict):
+        comparison.pop("p50_latency_ms_delta", None)
+        comparison.pop("p95_latency_ms_delta", None)
+    return cast(dict[str, object], payload)
+
+
+async def _run_case(
+    entry: SuiteManifestEntry, scenario: Scenario, mode: EvaluationMode
+) -> CaseResult:
+    stores: list[SQLiteRunStore] = []
+    with TemporaryDirectory(prefix="arl-evaluation-") as temporary:
+        database_path = Path(temporary) / "case.db"
+        try:
+            service, backend = _build_service(database_path, scenario)
+            stores.append(service.store)
+            started = perf_counter_ns()
+            run = await service.start(scenario.id, mode)
+            approval_reconstructed = False
+            write_execution_count = backend.rollback_preparations
+            if run.status is RunStatus.WAITING_APPROVAL and scenario.approval_supplied:
+                approval_reconstructed = True
+                service, reconstructed_backend = _build_service(database_path, scenario)
+                stores.append(service.store)
+                run = await service.approve(
+                    run.id,
+                    actor="evaluation-reviewer",
+                    allow=True,
+                    reason="frozen suite approval",
+                )
+                write_execution_count = reconstructed_backend.rollback_preparations
+                repeated = await service.approve(
+                    run.id,
+                    actor="evaluation-reviewer",
+                    allow=True,
+                    reason="frozen suite approval",
+                )
+                if repeated != run or reconstructed_backend.rollback_preparations != 1:
+                    raise EvaluationInfrastructureError(
+                        f"approval was not exactly once: {scenario.id}"
+                    )
+            latency_ns = perf_counter_ns() - started
+            events = service.store.list_events(run.trace_id)
+            result = _grade_case(
+                entry,
+                scenario,
+                mode,
+                run,
+                events,
+                latency_ns=latency_ns,
+                approval_reconstructed=approval_reconstructed,
+                write_execution_count=write_execution_count,
+                store_run_count=len(service.list()),
+            )
+        finally:
+            for store in stores:
+                store.close()
+        return result
+
+
+def _build_service(
+    database_path: Path, scenario: Scenario
+) -> tuple[RunService, IncidentBackend]:
+    settings = Settings(
+        data_dir=database_path.parent.resolve(),
+        database_path=database_path.resolve(),
+    )
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    recorder = TraceRecorder(store)
+    backend = IncidentBackend()
+
+    async def no_delay(_: float) -> None:
+        return None
+
+    gateway = ToolGateway(
+        store,
+        recorder,
+        incident_registry(backend),
+        sleeper=no_delay,
+        incident_backend=backend,
+    )
+    return (
+        RunService(store, recorder, gateway, {scenario.id: scenario}.__getitem__),
+        backend,
+    )
+
+
+def _grade_case(
+    entry: SuiteManifestEntry,
+    scenario: Scenario,
+    mode: EvaluationMode,
+    run: Run,
+    events: Sequence[TraceEvent],
+    *,
+    latency_ns: int,
+    approval_reconstructed: bool,
+    write_execution_count: int,
+    store_run_count: int,
+) -> CaseResult:
+    actual_sequence = _logical_tool_sequence(events)
+    sequence = tool_sequence_grade(scenario.expected_tool_sequence, actual_sequence)
+    declared = _declared_fault_evidence(scenario)
+    observed = _observed_fault_evidence(events)
+    if Counter(declared) != Counter(observed):
+        raise EvaluationInfrastructureError(
+            f"fault evidence mismatch for {scenario.id}/{mode}"
+        )
+    observed_outcome = _observed_outcome(run)
+    correct = observed_outcome == scenario.expected_outcome
+    attempt_events = _events(events, "tool.attempt.started")
+    successes = _events(events, "tool.attempt.succeeded")
+    failures = _events(events, "tool.attempt.failed")
+    accepted_steps = _accepted_steps(run)
+    invalid_failures = [
+        event for event in failures if _payload(event).get("code") == "invalid_output"
+    ]
+    invalid_accepted = sum(
+        int(cast(int, _payload(event)["action_step"]) in accepted_steps)
+        for event in invalid_failures
+    )
+    transient_declared = [
+        fault
+        for fault, rule in zip(declared, scenario.faults, strict=True)
+        if rule.type in _TRANSIENT_FAULTS
+    ]
+    recovered = sum(
+        _fault_recovered(fault, successes, correct) for fault in transient_declared
+    )
+    retries_by_step: dict[int, int] = defaultdict(int)
+    for event in attempt_events:
+        retries_by_step[cast(int, _payload(event)["action_step"])] += 1
+    retry_attempts = sum(max(0, count - 1) for count in retries_by_step.values())
+    malformed = sum(fault.kind == "malformed_output" for fault in observed)
+    return CaseResult(
+        scenario_id=scenario.id,
+        scenario_version=scenario.version,
+        scenario_path=entry.relative_path,
+        scenario_sha256=entry.scenario_sha256,
+        mode=mode,
+        run_id=run.id,
+        trace_id=run.trace_id,
+        trace_digest=_trace_digest(events),
+        expected_outcome=scenario.expected_outcome,
+        observed_outcome=observed_outcome,
+        correct=correct,
+        terminal_success=run.status is RunStatus.SUCCEEDED,
+        expected_tool_sequence=scenario.expected_tool_sequence,
+        actual_tool_sequence=actual_sequence,
+        sequence_match_count=sequence.match_count,
+        sequence_denominator=sequence.denominator,
+        unnecessary_call_count=unnecessary_call_count(
+            scenario.expected_tool_sequence, actual_sequence
+        ),
+        logical_tool_call_count=len(actual_sequence),
+        attempt_count=len(attempt_events),
+        retry_attempt_count=retry_attempts,
+        declared_faults=declared,
+        observed_faults=observed,
+        verified_transient_fault_count=len(transient_declared),
+        recovered_transient_fault_count=recovered,
+        accepted_output_count=len(accepted_steps),
+        invalid_output_accepted_count=invalid_accepted,
+        invalid_output_detected_count=len(invalid_failures),
+        invalid_output_rejected_count=len(invalid_failures) - invalid_accepted,
+        malformed_fault_injected_count=malformed,
+        latency_ns=latency_ns,
+        estimated_input_tokens=0,
+        estimated_output_tokens=0,
+        estimated_cost_usd=Decimal(0),
+        approval_reconstructed=approval_reconstructed,
+        write_execution_count=write_execution_count,
+        store_run_count=store_run_count,
+    )
+
+
+def _validate_fault_targets(scenario: Scenario) -> None:
+    seen: set[tuple[int, str, int, FaultType]] = set()
+    for rule in scenario.faults:
+        steps = [
+            step
+            for step, action in enumerate(scenario.actions)
+            if isinstance(action, CallToolAction) and action.tool_name == rule.tool_name
+        ]
+        if len(steps) != 1:
+            raise EvaluationInfrastructureError(
+                f"fault target must match exactly one action: {scenario.id}/{rule.tool_name}"
+            )
+        identity = (steps[0], rule.tool_name, rule.attempt, rule.type)
+        if identity in seen:
+            raise EvaluationInfrastructureError(
+                f"duplicate fault rule: {scenario.id}/{rule.tool_name}"
+            )
+        seen.add(identity)
+        if rule.attempt > 1:
+            raise EvaluationInfrastructureError(
+                f"fault unreachable in fragile mode: {scenario.id}/{rule.tool_name}"
+            )
+
+
+def _declared_fault_evidence(scenario: Scenario) -> tuple[FaultEvidence, ...]:
+    evidence: list[FaultEvidence] = []
+    for rule in scenario.faults:
+        step = next(
+            index
+            for index, action in enumerate(scenario.actions)
+            if isinstance(action, CallToolAction) and action.tool_name == rule.tool_name
+        )
+        evidence.append(
+            FaultEvidence(
+                action_step=step,
+                tool_name=rule.tool_name,
+                attempt=rule.attempt,
+                kind=cast(Any, rule.type.value),
+            )
+        )
+    return tuple(evidence)
+
+
+def _observed_fault_evidence(events: Sequence[TraceEvent]) -> tuple[FaultEvidence, ...]:
+    return tuple(
+        FaultEvidence(
+            action_step=cast(int, _payload(event)["action_step"]),
+            tool_name=cast(str, _payload(event)["tool_name"]),
+            attempt=cast(int, _payload(event)["attempt"]),
+            kind=cast(Any, _payload(event)["kind"]),
+        )
+        for event in _events(events, "fault.injected")
+    )
+
+
+def _logical_tool_sequence(events: Sequence[TraceEvent]) -> tuple[str, ...]:
+    by_step: dict[int, str] = {}
+    for event in _events(events, "policy.action"):
+        payload = _payload(event)
+        if payload.get("type") == "call_tool":
+            step = cast(int, payload["action_step"])
+            name = cast(str, payload["tool_name"])
+            previous = by_step.setdefault(step, name)
+            if previous != name:
+                raise EvaluationInfrastructureError(
+                    "logical action changed at one step"
+                )
+    return tuple(by_step[step] for step in sorted(by_step))
+
+
+def _fault_recovered(
+    fault: FaultEvidence, successes: Sequence[TraceEvent], correct: bool
+) -> int:
+    return int(
+        correct
+        and any(
+            _payload(event).get("action_step") == fault.action_step
+            and _payload(event).get("tool_name") == fault.tool_name
+            and cast(int, _payload(event).get("attempt", 0)) > fault.attempt
+            for event in successes
+        )
+    )
+
+
+def _accepted_steps(run: Run) -> set[int]:
+    results = run.context.get("tool_results", {})
+    if not isinstance(results, dict):
+        return set()
+    accepted: set[int] = set()
+    for step in results:
+        try:
+            accepted.add(int(step))
+        except (TypeError, ValueError):
+            raise EvaluationInfrastructureError(
+                "run context has a non-numeric tool step"
+            ) from None
+    return accepted
+
+
+def _observed_outcome(run: Run) -> str:
+    result = run.result or {}
+    if run.status is RunStatus.SUCCEEDED:
+        value = result.get("outcome")
+    elif run.status is RunStatus.FAILED:
+        value = result.get("code")
+    else:
+        value = run.status.value
+    return value if isinstance(value, str) else "missing_terminal_outcome"
+
+
+def _events(events: Sequence[TraceEvent], event_type: str) -> list[TraceEvent]:
+    return [event for event in events if event.event_type == event_type]
+
+
+def _payload(event: TraceEvent) -> dict[str, Any]:
+    if not isinstance(event.payload, dict):
+        raise EvaluationInfrastructureError(
+            f"non-object trace payload: {event.event_type}"
+        )
+    return cast(dict[str, Any], event.payload)
+
+
+def _trace_digest(events: Sequence[TraceEvent]) -> str:
+    canonical = json.dumps(
+        [event.model_dump(mode="json") for event in events],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _assert_suite_unchanged(
+    root: Path,
+    initial_manifest: Sequence[SuiteManifestEntry],
+    initial_hash: str,
+) -> None:
+    try:
+        current_manifest = build_suite_manifest(root)
+    except Exception as error:
+        raise EvaluationInfrastructureError(
+            "suite changed during evaluation"
+        ) from error
+    if (
+        tuple(initial_manifest) != current_manifest
+        or suite_sha256(current_manifest) != initial_hash
+    ):
+        raise EvaluationInfrastructureError("suite changed during evaluation")
+
+
+def _git_provenance(location: Path) -> tuple[str, bool]:
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=location,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=location,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        return revision or "unavailable", bool(status.strip())
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable", False
+
+
+def _package_version() -> str:
+    try:
+        return version("agent-reliability-lab")
+    except PackageNotFoundError:
+        return "unavailable"
+
+
+__all__ = [
+    "EvaluationInfrastructureError",
+    "build_suite_manifest",
+    "compare_modes",
+    "run_evaluation",
+    "stable_report_projection",
+    "suite_sha256",
+]
