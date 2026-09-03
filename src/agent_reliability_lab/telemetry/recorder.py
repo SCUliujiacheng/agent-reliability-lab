@@ -1,22 +1,12 @@
 """Privacy-preserving recording of trace events."""
 
-from collections.abc import Mapping
-from typing import Any
 from uuid import UUID
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 from agent_reliability_lab.storage.models import TraceEvent
+from agent_reliability_lab.storage.sanitization import sanitize_payload
 from agent_reliability_lab.storage.store import SQLiteRunStore
-
-_SENSITIVE_KEYS = {"authorization", "api_key", "apikey", "password", "secret", "token"}
-_REDACTED = "[REDACTED]"
-_JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-
-
-def sanitize_payload(value: JsonValue, secret_values: set[str]) -> JsonValue:
-    """Recursively replace secret-bearing fields and known secret values."""
-    return _sanitize(value, secret_values)
 
 
 class TraceRecorder:
@@ -34,18 +24,3 @@ class TraceRecorder:
             trace_id, event_type, sanitize_payload(payload, self._secret_values)
         )
         return self._store.append_event(event)
-
-
-def _sanitize(value: Any, secret_values: set[str]) -> JsonValue:
-    if isinstance(value, Mapping):
-        return {
-            str(key): _REDACTED
-            if str(key).lower() in _SENSITIVE_KEYS
-            else _sanitize(item, secret_values)
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize(item, secret_values) for item in value]
-    if isinstance(value, str) and value in secret_values:
-        return _REDACTED
-    return _JSON_VALUE.validate_python(value)
