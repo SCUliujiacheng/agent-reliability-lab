@@ -89,6 +89,7 @@ def test_gateway_retries_a_transient_timeout_and_records_attempts(
         "tool.attempt.started",
         "tool.attempt.succeeded",
     ]
+    assert gateway.events[-1].payload["output"] == result.output
 
 
 def test_malformed_fault_traverses_authoritative_output_validation(

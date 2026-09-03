@@ -133,6 +133,8 @@ class RunService:
         except ValueError:
             self._rejected(run, "approval.rejected", "decision_conflict")
             raise
+        if run.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
+            return run
         self._recorder.record(
             run.trace_id,
             "approval.recorded",
@@ -145,8 +147,6 @@ class RunService:
             parent_span_id=run.trace_id,
         )
 
-        if run.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
-            return run
         if run.status not in {RunStatus.WAITING_APPROVAL, RunStatus.RUNNING}:
             self._rejected(run, "approval.rejected", "not_waiting")
             raise RunConflictError("run is not waiting for approval")
@@ -194,6 +194,10 @@ class RunService:
             self.store.renew_run_execution(run_id, owner_token=owner_token)
 
     def _deny(self, run: Run, *, actor: str, reason: str | None) -> Run:
+        action_step = run.current_step
+        action_fingerprint = run.pending_action_fingerprint
+        if action_fingerprint is None:
+            raise RunConflictError("approval has no pending action fingerprint")
         owner_token = uuid4().hex
         owned = self.store.claim_run_execution(run.id, owner_token=owner_token)
         primary_error: BaseException | None = None
@@ -214,7 +218,19 @@ class RunService:
             self._recorder.record(
                 owned.trace_id,
                 "approval.denied",
-                {"actor": actor, "reason": reason},
+                {
+                    "actor": actor,
+                    "reason": reason,
+                    "action_step": action_step,
+                    "action_fingerprint": action_fingerprint,
+                },
+                parent_span_id=owned.trace_id,
+                status="error",
+            )
+            self._recorder.record(
+                owned.trace_id,
+                "run.failed",
+                {"code": "approval_denied", "reason": reason},
                 parent_span_id=owned.trace_id,
                 status="error",
             )

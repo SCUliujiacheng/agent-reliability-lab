@@ -130,6 +130,7 @@ def logical_action_projection(
             action_step=step,
             kind=action.type,
             tool_name=action.tool_name if isinstance(action, CallToolAction) else None,
+            action_payload=cast(dict[str, JsonValue], action.model_dump(mode="json")),
             action_fingerprint=canonical_action_fingerprint(action),
         )
         for step, action in enumerate(scenario.actions)
@@ -275,6 +276,11 @@ def stable_report_projection(report: EvaluationReport) -> dict[str, object]:
             case.pop("trace_id", None)
             case.pop("trace_digest", None)
             case.pop("latency_ns", None)
+            for event in cast(list[dict[str, object]], case["trace_evidence"]):
+                event.pop("event_id", None)
+                event.pop("trace_id", None)
+                event.pop("span_id", None)
+                event.pop("parent_span_id", None)
     comparison = payload.get("comparison")
     if isinstance(comparison, dict):
         comparison.pop("p50_latency_ms_delta", None)
@@ -692,11 +698,15 @@ _EVIDENCE_EVENT_TYPES = {
     "tool.attempt.started",
     "fault.injected",
     "tool.output.validation_failed",
+    "tool.preflight.failed",
     "tool.attempt.failed",
     "tool.attempt.succeeded",
     "tool.attempt.cancelled",
     "run.waiting_approval",
     "approval.recorded",
+    "approval.denied",
+    "run.checkpointed",
+    "tool.retry.cancelled",
     "run.succeeded",
     "run.failed",
 }
@@ -713,13 +723,16 @@ def _ordered_trace_evidence(
             raise EvaluationInfrastructureError("trace event has no durable sequence")
         evidence.append(
             OrderedTraceEvidence(
+                event_id=event.id,
+                trace_id=event.trace_id,
+                span_id=event.span_id,
+                parent_span_id=event.parent_span_id,
+                status=event.status,
                 sequence=event.sequence,
                 event_type=cast(Any, event.event_type),
                 payload=cast(dict[str, JsonValue], _payload(event)),
             )
         )
-        if event.event_type in {"run.succeeded", "run.failed"}:
-            break
     return tuple(evidence)
 
 

@@ -1,8 +1,10 @@
 """Shared exact report fixtures for evaluation tests."""
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 
@@ -27,6 +29,17 @@ from agent_reliability_lab.evaluation.runner import (
     suite_sha256,
     trace_evidence_digest,
 )
+
+
+def _fixture_digest(value: object) -> str:
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def make_case(
@@ -118,11 +131,12 @@ def make_case(
         }
         for _ in range(call_count)
     )
+    final_outcome = "resolved" if correct else "tool_timeout"
     finish_payload = {
         "type": "finish",
         "summary": "fixture conclusion",
         "evidence_refs": [],
-        "outcome": "resolved",
+        "outcome": final_outcome if terminal_success else "resolved",
     }
     action_payloads = (*call_payloads, finish_payload)
     logical_actions = tuple(
@@ -132,17 +146,32 @@ def make_case(
             tool_name=(
                 str(payload["tool_name"]) if payload["type"] == "call_tool" else None
             ),
+            action_payload=payload,
             action_fingerprint=canonical_action_fingerprint(payload),
         )
         for step, payload in enumerate(action_payloads)
     )
     trace_items: list[OrderedTraceEvidence] = []
+    run_id = uuid5(NAMESPACE_URL, f"fixture-run:{scenario_id}:{mode}")
+    trace_id = uuid5(NAMESPACE_URL, f"fixture-trace:{scenario_id}:{mode}")
     sequence = 1
 
-    def record(event_type: str, payload: dict[str, object]) -> None:
+    def record(
+        event_type: str,
+        payload: dict[str, object],
+        *,
+        span_id: UUID | None = None,
+        status: str = "ok",
+    ) -> None:
         nonlocal sequence
+        event_id = uuid5(trace_id, f"event:{sequence}")
         trace_items.append(
             OrderedTraceEvidence(
+                event_id=event_id,
+                trace_id=trace_id,
+                span_id=span_id or event_id,
+                parent_span_id=trace_id,
+                status=status,
                 sequence=sequence,
                 event_type=event_type,
                 payload=payload,
@@ -153,9 +182,11 @@ def make_case(
     record("run.running", {"from_status": "queued"})
     for step, payload in enumerate(call_payloads):
         record("policy.action", {**payload, "action_step": step})
+        attempt_span = uuid5(trace_id, f"attempt:{step}:1")
         record(
             "tool.attempt.started",
             {"action_step": step, "tool_name": "search_recent_logs", "attempt": 1},
+            span_id=attempt_span,
         )
         if recoverable and step == fault_step:
             record(
@@ -166,6 +197,8 @@ def make_case(
                     "attempt": 1,
                     "kind": "timeout",
                 },
+                span_id=attempt_span,
+                status="error",
             )
             record(
                 "tool.attempt.failed",
@@ -176,8 +209,11 @@ def make_case(
                     "code": "tool_timeout",
                     "transient": True,
                 },
+                span_id=attempt_span,
+                status="error",
             )
             if recovered:
+                retry_span = uuid5(trace_id, f"attempt:{step}:2")
                 record(
                     "tool.attempt.started",
                     {
@@ -185,6 +221,10 @@ def make_case(
                         "tool_name": "search_recent_logs",
                         "attempt": 2,
                     },
+                    span_id=retry_span,
+                )
+                output = next(
+                    item.output for item in accepted_outputs if item.action_step == step
                 )
                 record(
                     "tool.attempt.succeeded",
@@ -192,19 +232,47 @@ def make_case(
                         "action_step": step,
                         "tool_name": "search_recent_logs",
                         "attempt": 2,
+                        "output": output,
+                    },
+                    span_id=retry_span,
+                )
+                record(
+                    "run.checkpointed",
+                    {
+                        "action_step": step,
+                        "attempt": 2,
+                        "current_step": step + 1,
+                        "cached": False,
+                        "output_digest": _fixture_digest(output),
+                        "context_digest": "c" * 64,
                     },
                 )
         else:
+            output = next(
+                item.output for item in accepted_outputs if item.action_step == step
+            )
             record(
                 "tool.attempt.succeeded",
                 {
                     "action_step": step,
                     "tool_name": "search_recent_logs",
                     "attempt": 1,
+                    "output": output,
+                },
+                span_id=attempt_span,
+            )
+            record(
+                "run.checkpointed",
+                {
+                    "action_step": step,
+                    "attempt": 1,
+                    "current_step": step + 1,
+                    "cached": False,
+                    "output_digest": _fixture_digest(output),
+                    "context_digest": "c" * 64,
                 },
             )
     final_status = "succeeded" if terminal_success else "failed"
-    final_outcome = "resolved" if correct else "tool_timeout"
     if terminal_success:
         finish_step = len(call_payloads)
         record("policy.action", {**finish_payload, "action_step": finish_step})
@@ -216,7 +284,7 @@ def make_case(
         record("run.succeeded", final_result)
     else:
         final_result = {"code": final_outcome}
-        record("run.failed", final_result)
+        record("run.failed", final_result, status="error")
     trace_evidence = tuple(trace_items)
     return CaseResult(
         scenario_id=scenario_id,
@@ -224,8 +292,8 @@ def make_case(
         scenario_path=f"{scenario_id}.yaml",
         scenario_sha256="1" * 64,
         mode=mode,
-        run_id=UUID(int=1),
-        trace_id=UUID(int=2),
+        run_id=run_id,
+        trace_id=trace_id,
         trace_digest=trace_evidence_digest(trace_evidence),
         trace_evidence=trace_evidence,
         logical_actions=logical_actions,
@@ -291,8 +359,14 @@ def make_report(
                     if case.declared_faults
                     else None
                 ),
-                correct=False,
-                terminal_success=False,
+                correct=(
+                    case.correct if case.verified_transient_fault_count == 0 else False
+                ),
+                terminal_success=(
+                    case.terminal_success
+                    if case.verified_transient_fault_count == 0
+                    else False
+                ),
             )
             for case in resilient_cases
         )
@@ -311,10 +385,10 @@ def make_report(
         for case in resilient_cases
     )
     provenance = EvaluationProvenance(
-        report_version="3",
-        schema_version="3",
-        grader_version="exact-v3",
-        normalization_version="baseline-v3",
+        report_version="4",
+        schema_version="4",
+        grader_version="exact-v4",
+        normalization_version="baseline-v4",
         suite_hash=suite_hash or suite_sha256(manifest),
         suite_manifest=manifest,
         git_revision="f" * 40,

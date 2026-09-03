@@ -324,6 +324,7 @@ class ToolGateway:
                         "tool_name": action.tool_name,
                         "attempt": attempt,
                         "action_step": run.current_step,
+                        "output": _traceable_output(output),
                     },
                     span_id=span_id,
                 )
@@ -468,6 +469,15 @@ def _request_fingerprint(tool_name: str, validated_input: BaseModel) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _traceable_output(output: JsonValue) -> JsonValue:
+    """Keep trace persistence from changing non-JSON result disposition."""
+    try:
+        json.dumps(output, allow_nan=False)
+    except (TypeError, ValueError):
+        return {"__arl_unserializable_output__": True}
+    return output
 
 
 def action_fingerprint(action: CallToolAction) -> str:

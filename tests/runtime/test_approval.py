@@ -20,6 +20,12 @@ async def test_approval_run_reconstructs_and_resumes_exactly_once(
 
     repeated = await reconstructed.runs.approve(run.id, actor="reviewer", allow=True)
     assert repeated == completed
+    recorded = [
+        event
+        for event in reconstructed.runs.store.list_events(completed.trace_id)
+        if event.event_type == "approval.recorded"
+    ]
+    assert len(recorded) == 1
 
     with pytest.raises(ValueError, match="conflict"):
         await reconstructed.runs.approve(run.id, actor="other", allow=True)
@@ -41,3 +47,25 @@ async def test_denied_approval_terminates_without_executing_write(
     assert denied.pending_approval is False
     assert denied.result == {"code": "approval_denied", "reason": "unsafe"}
     assert app_context.backend.rollback_preparations == 0
+    events = app_context.runs.store.list_events(denied.trace_id)
+    denied_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.event_type == "approval.denied"
+    )
+    assert events[denied_index].payload == {
+        "actor": "reviewer",
+        "reason": "unsafe",
+        "action_step": events[denied_index - 1].payload["action_step"],
+        "action_fingerprint": events[denied_index - 1].payload["action_fingerprint"],
+    }
+    assert events[denied_index + 1].event_type == "run.failed"
+    assert events[denied_index + 1].payload == {
+        "code": "approval_denied",
+        "reason": "unsafe",
+    }
+    assert events[-1] == events[denied_index + 1]
+    assert not any(
+        event.event_type.startswith("tool.attempt.")
+        for event in events[denied_index + 1 :]
+    )

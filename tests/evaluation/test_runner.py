@@ -173,9 +173,9 @@ async def test_accepted_context_outputs_are_independently_schema_validated(
 
     result = enforce_gate(polluted_report)
 
-    assert result.comparable is True
+    assert result.comparable is False
     assert result.passed is False
-    assert "invalid_output_rate" in result.failures
+    assert "case_evidence_mismatch" in result.infrastructure_errors
 
 
 @pytest.mark.asyncio

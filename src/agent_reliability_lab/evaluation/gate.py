@@ -5,6 +5,7 @@ import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from fractions import Fraction
+from itertools import pairwise
 from typing import Any, cast
 
 from pydantic import ValidationError
@@ -15,6 +16,8 @@ from agent_reliability_lab.evaluation.graders import (
     unnecessary_call_count,
 )
 from agent_reliability_lab.evaluation.models import (
+    AcceptedOutputEvidence,
+    AttemptEvidence,
     CaseResult,
     EvaluationReport,
     FaultEvidence,
@@ -127,6 +130,22 @@ def _integrity_errors(report: EvaluationReport) -> tuple[str, ...]:
     manifest_by_id = {
         entry.scenario_id: entry for entry in report.provenance.suite_manifest
     }
+    run_ids = [case.run_id for result in report.modes.values() for case in result.cases]
+    trace_ids = [
+        case.trace_id for result in report.modes.values() for case in result.cases
+    ]
+    event_ids = [
+        item.event_id
+        for result in report.modes.values()
+        for case in result.cases
+        for item in case.trace_evidence
+    ]
+    if (
+        len(run_ids) != len(set(run_ids))
+        or len(trace_ids) != len(set(trace_ids))
+        or len(event_ids) != len(set(event_ids))
+    ):
+        errors.append("case_evidence_mismatch")
     for mode, result in report.modes.items():
         actual = {
             (
@@ -159,6 +178,12 @@ def _integrity_errors(report: EvaluationReport) -> tuple[str, ...]:
             or fragile.expected_outcome != resilient.expected_outcome
             or fragile.expected_tool_sequence != resilient.expected_tool_sequence
             or fragile.declared_faults != resilient.declared_faults
+        ):
+            errors.append("case_evidence_mismatch")
+        if not any(
+            fault.kind in _TRANSIENT_KINDS for fault in fragile.declared_faults
+        ) and _normalized_case_semantics(fragile) != _normalized_case_semantics(
+            resilient
         ):
             errors.append("case_evidence_mismatch")
     try:
@@ -204,6 +229,7 @@ def _case_evidence_errors(case: CaseResult, frozen: SuiteManifestEntry) -> list[
         or case.attempt_evidence != trace.attempts
         or case.observed_faults != trace.faults
         or case.output_validation_failures != trace.validation_failures
+        or case.accepted_outputs != trace.accepted_outputs
         or case.actual_tool_sequence != trace.actual_tool_sequence
         or case.final_status != trace.final_status
         or case.final_result != trace.final_result
@@ -266,17 +292,8 @@ def _case_evidence_errors(case: CaseResult, frozen: SuiteManifestEntry) -> list[
     if validation_identities != failed_invalid_identities:
         errors.append("case_evidence_mismatch")
     invalid_accepted = _invalid_accepted_output_count(case)
-    accepted_identities = Counter(
-        (item.action_step, item.tool_name) for item in case.accepted_outputs
-    )
-    successful_identities = Counter(
-        (item.action_step, item.tool_name)
-        for item in trace.attempts
-        if item.status == "succeeded"
-    )
     if (
         case.accepted_output_count != len(case.accepted_outputs)
-        or accepted_identities != successful_identities
         or case.invalid_output_accepted_count != invalid_accepted
         or case.invalid_output_detected_count != len(case.output_validation_failures)
         or case.invalid_output_rejected_count != len(case.output_validation_failures)
@@ -295,9 +312,10 @@ def _case_evidence_errors(case: CaseResult, frozen: SuiteManifestEntry) -> list[
 @dataclass(frozen=True, slots=True)
 class _TraceClaims:
     actual_tool_sequence: tuple[str, ...]
-    attempts: tuple[Any, ...]
+    attempts: tuple[AttemptEvidence, ...]
     faults: tuple[FaultEvidence, ...]
     validation_failures: tuple[OutputValidationEvidence, ...]
+    accepted_outputs: tuple[AcceptedOutputEvidence, ...]
     final_status: str
     final_result: dict[str, Any]
     approval_reconstructed: bool
@@ -306,33 +324,70 @@ class _TraceClaims:
 def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims | None:
     if case.trace_digest != trace_evidence_digest(case.trace_evidence):
         return None
+    if any(
+        item.trace_id != case.trace_id or item.parent_span_id != case.trace_id
+        for item in case.trace_evidence
+    ):
+        return None
+    event_ids = [item.event_id for item in case.trace_evidence]
+    if len(event_ids) != len(set(event_ids)):
+        return None
     sequences = [item.sequence for item in case.trace_evidence]
     if sequences != sorted(sequences) or len(sequences) != len(set(sequences)):
         return None
     frozen_by_step = {item.action_step: item for item in frozen.logical_actions}
     if sorted(frozen_by_step) != list(range(len(frozen_by_step))):
         return None
+    for action in frozen.logical_actions:
+        if action.action_payload.get("type") != action.kind:
+            return None
+        if action.kind == "call_tool":
+            if action.action_payload.get("tool_name") != action.tool_name:
+                return None
+        elif action.tool_name is not None:
+            return None
+        if (
+            canonical_action_fingerprint(action.action_payload)
+            != action.action_fingerprint
+        ):
+            return None
 
     seen_actions: dict[int, str] = {}
+    last_policy_step = -1
+    policy_positions: dict[int, list[int]] = defaultdict(list)
     actual: list[str] = []
     active_call: tuple[int, str] | None = None
     terminal_action_seen = False
+    terminal_action_kind: str | None = None
+    terminal_action_payload: dict[str, Any] | None = None
     terminal_seen = False
     started: set[tuple[int, str, int]] = set()
-    attempts: list[Any] = []
+    attempts: list[AttemptEvidence] = []
+    attempt_start_positions: dict[tuple[int, str, int], int] = {}
+    attempt_spans: dict[tuple[int, str, int], Any] = {}
+    last_attempt_by_action: dict[tuple[int, str], AttemptEvidence] = {}
+    pending_success: tuple[int, str, int, Any] | None = None
+    accepted_outputs: list[AcceptedOutputEvidence] = []
     faults: list[FaultEvidence] = []
     validations: list[OutputValidationEvidence] = []
-    waits: list[tuple[int, int, str]] = []
-    approvals: list[tuple[int, int, str]] = []
+    waits: list[tuple[int, int, str, str]] = []
+    approvals: list[tuple[int, int, str, str, bool]] = []
     resumes: list[int] = []
     final_status: str | None = None
     final_result: dict[str, Any] | None = None
-
-    from agent_reliability_lab.evaluation.models import AttemptEvidence
+    preflight_failure: tuple[int, str, str] | None = None
+    denied: tuple[int, str, str, str] | None = None
 
     for item in case.trace_evidence:
         payload = item.payload
+        if pending_success is not None and item.event_type != "run.checkpointed":
+            return None
         if terminal_seen:
+            return None
+        if terminal_action_seen and item.event_type not in {
+            "run.succeeded",
+            "run.failed",
+        }:
             return None
         if item.event_type == "policy.action":
             if terminal_action_seen:
@@ -350,9 +405,12 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             if (
                 kind != frozen_action.kind
                 or tool_name != frozen_action.tool_name
+                or action_payload != frozen_action.action_payload
                 or canonical_action_fingerprint(action_payload)
                 != frozen_action.action_fingerprint
             ):
+                return None
+            if step < last_policy_step:
                 return None
             if step not in seen_actions:
                 if step != len(seen_actions):
@@ -362,12 +420,17 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                     actual.append(tool_name)
             elif seen_actions[step] != kind:
                 return None
+            policy_positions[step].append(item.sequence)
+            last_policy_step = max(last_policy_step, step)
             active_call = (
                 (step, tool_name)
                 if kind == "call_tool" and tool_name is not None
                 else None
             )
             terminal_action_seen = kind in {"finish", "fail"}
+            if terminal_action_seen:
+                terminal_action_kind = kind
+                terminal_action_payload = action_payload
             continue
 
         if item.event_type.startswith("tool.attempt."):
@@ -375,24 +438,50 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
             if identity is None or active_call != identity[:2] or terminal_action_seen:
                 return None
             if item.event_type == "tool.attempt.started":
+                if item.status != "ok":
+                    return None
                 if identity in started:
                     return None
+                action_identity = identity[:2]
+                previous = last_attempt_by_action.get(action_identity)
+                if identity[2] == 1:
+                    if previous is not None:
+                        return None
+                elif (
+                    previous is None
+                    or identity[2] != previous.attempt + 1
+                    or previous.status != "failed"
+                    or previous.transient is not True
+                ):
+                    return None
+                if identity[2] > (1 if case.mode == "fragile" else 2):
+                    return None
                 started.add(identity)
+                attempt_start_positions[identity] = item.sequence
+                attempt_spans[identity] = item.span_id
                 continue
             if identity not in started:
                 return None
+            if item.span_id != attempt_spans[identity]:
+                return None
             started.remove(identity)
             status = item.event_type.removeprefix("tool.attempt.")
-            attempts.append(
-                AttemptEvidence(
-                    action_step=identity[0],
-                    tool_name=identity[1],
-                    attempt=identity[2],
-                    status=cast(Any, status),
-                    error_code=cast(str | None, payload.get("code")),
-                    transient=cast(bool | None, payload.get("transient")),
-                )
+            if item.status != ("ok" if status == "succeeded" else "error"):
+                return None
+            terminal_attempt = AttemptEvidence(
+                action_step=identity[0],
+                tool_name=identity[1],
+                attempt=identity[2],
+                status=cast(Any, status),
+                error_code=cast(str | None, payload.get("code")),
+                transient=cast(bool | None, payload.get("transient")),
             )
+            attempts.append(terminal_attempt)
+            last_attempt_by_action[identity[:2]] = terminal_attempt
+            if status == "succeeded":
+                if "output" not in payload:
+                    return None
+                pending_success = (*identity, payload["output"])
             continue
 
         if item.event_type in {"fault.injected", "tool.output.validation_failed"}:
@@ -402,6 +491,8 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 or active_call != identity[:2]
                 or identity not in started
                 or terminal_action_seen
+                or item.span_id != attempt_spans[identity]
+                or item.status != "error"
             ):
                 return None
             try:
@@ -420,6 +511,63 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 return None
             continue
 
+        if item.event_type == "run.checkpointed":
+            if pending_success is None or item.status != "ok":
+                return None
+            step, tool_name, attempt, output = pending_success
+            try:
+                context_digest = cast(str, payload["context_digest"])
+                cached = payload["cached"]
+            except KeyError:
+                return None
+            if (
+                payload.get("action_step") != step
+                or payload.get("attempt") != attempt
+                or payload.get("current_step") != step + 1
+                or not isinstance(cached, bool)
+                or payload.get("output_digest") != _canonical_json_digest(output)
+                or not isinstance(context_digest, str)
+                or len(context_digest) != 64
+            ):
+                return None
+            accepted_outputs.append(
+                AcceptedOutputEvidence(
+                    action_step=step,
+                    tool_name=tool_name,
+                    output=output,
+                )
+            )
+            pending_success = None
+            active_call = None
+            continue
+
+        if item.event_type == "tool.preflight.failed":
+            if active_call is None or item.status != "error" or started:
+                return None
+            try:
+                step = _payload_int(payload, "action_step")
+                tool_name = cast(str, payload["tool_name"])
+                code = cast(str, payload["code"])
+                fingerprint = cast(str, payload["action_fingerprint"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            preflight_action = frozen_by_step.get(step)
+            if (
+                active_call != (step, tool_name)
+                or preflight_action is None
+                or fingerprint != preflight_action.action_fingerprint
+                or code
+                not in {
+                    "unknown_tool",
+                    "invalid_input",
+                    "invalid_fault_plan",
+                    "idempotency_key_required",
+                }
+            ):
+                return None
+            preflight_failure = (step, tool_name, code)
+            continue
+
         if item.event_type == "run.waiting_approval":
             try:
                 step = _payload_int(payload, "step")
@@ -429,7 +577,7 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 return None
             if active_call != (step, tool_name) or terminal_action_seen:
                 return None
-            waits.append((item.sequence, step, fingerprint))
+            waits.append((item.sequence, step, tool_name, fingerprint))
             continue
 
         if item.event_type == "approval.recorded":
@@ -438,11 +586,37 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
                 fingerprint = cast(str, payload["action_fingerprint"])
             except (KeyError, TypeError, ValueError):
                 return None
-            if payload.get("allow") is True:
-                approvals.append((item.sequence, step, fingerprint))
+            actor = payload.get("actor")
+            allow = payload.get("allow")
+            if not isinstance(actor, str) or not isinstance(allow, bool):
+                return None
+            approvals.append((item.sequence, step, fingerprint, actor, allow))
             continue
 
+        if item.event_type == "approval.denied":
+            try:
+                step = _payload_int(payload, "action_step")
+                fingerprint = cast(str, payload["action_fingerprint"])
+                actor = cast(str, payload["actor"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            denied_action = frozen_by_step.get(step)
+            if (
+                item.status != "error"
+                or denied_action is None
+                or fingerprint != denied_action.action_fingerprint
+                or not isinstance(actor, str)
+            ):
+                return None
+            denied = (step, fingerprint, actor, cast(str, payload.get("reason")))
+            continue
+
+        if item.event_type == "tool.retry.cancelled":
+            return None
+
         if item.event_type == "run.running":
+            if item.status != "ok":
+                return None
             if payload.get("from_status") == "waiting_approval":
                 resumes.append(item.sequence)
             continue
@@ -450,7 +624,40 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
         if item.event_type in {"run.succeeded", "run.failed"}:
             if started:
                 return None
-            if item.event_type == "run.succeeded" and not terminal_action_seen:
+            if item.status != ("ok" if item.event_type == "run.succeeded" else "error"):
+                return None
+            if terminal_action_kind == "finish":
+                if (
+                    item.event_type != "run.succeeded"
+                    or terminal_action_payload is None
+                ):
+                    return None
+                expected_result = {
+                    "outcome": terminal_action_payload.get("outcome"),
+                    "summary": terminal_action_payload.get("summary"),
+                    "evidence_refs": terminal_action_payload.get("evidence_refs"),
+                }
+                if payload != expected_result:
+                    return None
+            elif terminal_action_kind == "fail":
+                if item.event_type != "run.failed" or terminal_action_payload is None:
+                    return None
+                expected_result = {
+                    "code": terminal_action_payload.get("code"),
+                    "explanation": terminal_action_payload.get("explanation"),
+                }
+                if payload != expected_result:
+                    return None
+            elif item.event_type == "run.succeeded":
+                return None
+            elif denied is not None:
+                expected_denied = {"code": "approval_denied", "reason": denied[3]}
+                if payload != expected_denied:
+                    return None
+            elif preflight_failure is not None:
+                if payload != {"code": preflight_failure[2]}:
+                    return None
+            elif not attempts or attempts[-1].status != "failed":
                 return None
             terminal_seen = True
             final_status = item.event_type.removeprefix("run.")
@@ -459,25 +666,161 @@ def _trace_claims(case: CaseResult, frozen: SuiteManifestEntry) -> _TraceClaims 
 
         return None
 
-    if started or final_status is None or final_result is None:
+    if (
+        started
+        or pending_success is not None
+        or final_status is None
+        or final_result is None
+    ):
         return None
-    reconstructed = any(
-        wait_sequence < approval_sequence < resume_sequence
-        and wait_step == approval_step
-        and wait_fingerprint == approval_fingerprint
-        for wait_sequence, wait_step, wait_fingerprint in waits
-        for approval_sequence, approval_step, approval_fingerprint in approvals
-        for resume_sequence in resumes
+    registry = incident_registry(IncidentBackend())
+    for step, positions in policy_positions.items():
+        action = frozen_by_step[step]
+        definition = registry.get(action.tool_name) if action.tool_name else None
+        allowed_count = (
+            2
+            if action.kind == "call_tool"
+            and definition is not None
+            and definition.requires_approval
+            and any(identity[0] == step for identity in attempt_start_positions)
+            else 1
+        )
+        if len(positions) != allowed_count:
+            return None
+    if not _attempt_semantics_are_supported(attempts, faults, validations):
+        return None
+    reconstructed = _approval_cycles_are_valid(
+        case,
+        frozen,
+        policy_positions,
+        attempt_start_positions,
+        waits,
+        approvals,
+        resumes,
     )
+    if reconstructed is None:
+        return None
     return _TraceClaims(
         actual_tool_sequence=tuple(actual),
         attempts=tuple(attempts),
         faults=tuple(faults),
         validation_failures=tuple(validations),
+        accepted_outputs=tuple(accepted_outputs),
         final_status=final_status,
         final_result=final_result,
         approval_reconstructed=reconstructed,
     )
+
+
+def _attempt_semantics_are_supported(
+    attempts: list[AttemptEvidence],
+    faults: list[FaultEvidence],
+    validations: list[OutputValidationEvidence],
+) -> bool:
+    fault_by_identity = Counter(
+        (item.action_step, item.tool_name, item.attempt, item.kind) for item in faults
+    )
+    validation_by_identity = Counter(
+        (item.action_step, item.tool_name, item.attempt) for item in validations
+    )
+    attempts_by_action: dict[tuple[int, str], list[AttemptEvidence]] = defaultdict(list)
+    for attempt in attempts:
+        attempts_by_action[(attempt.action_step, attempt.tool_name)].append(attempt)
+        if attempt.status == "succeeded":
+            continue
+        if attempt.status == "cancelled":
+            return False
+        identity = (attempt.action_step, attempt.tool_name, attempt.attempt)
+        if attempt.error_code == "invalid_output":
+            if attempt.transient is not False or validation_by_identity[identity] != 1:
+                return False
+        else:
+            matching_faults = [
+                kind
+                for kind, (code, transient) in _FAULT_FAILURE.items()
+                if fault_by_identity[(*identity, cast(Any, kind))] == 1
+                and attempt.error_code == code
+                and attempt.transient is transient
+            ]
+            if len(matching_faults) != 1:
+                return False
+    for action_attempts in attempts_by_action.values():
+        for previous, later in pairwise(action_attempts):
+            if (
+                later.attempt != previous.attempt + 1
+                or previous.status != "failed"
+                or previous.transient is not True
+            ):
+                return False
+    return True
+
+
+def _approval_cycles_are_valid(
+    case: CaseResult,
+    frozen: SuiteManifestEntry,
+    policy_positions: dict[int, list[int]],
+    attempt_start_positions: dict[tuple[int, str, int], int],
+    waits: list[tuple[int, int, str, str]],
+    approvals: list[tuple[int, int, str, str, bool]],
+    resumes: list[int],
+) -> bool | None:
+    registry = incident_registry(IncidentBackend())
+    executed_steps = {step for step, _, _ in attempt_start_positions}
+    approval_steps = {
+        action.action_step
+        for action in frozen.logical_actions
+        if action.kind == "call_tool"
+        and action.tool_name is not None
+        and (definition := registry.get(action.tool_name)) is not None
+        and definition.requires_approval
+        and action.action_step in executed_steps
+    }
+    if not approval_steps:
+        return False if not waits and not approvals and not resumes else None
+    if not frozen.approval_supplied or len(approval_steps) != 1:
+        return None
+    step = next(iter(approval_steps))
+    action = next(item for item in frozen.logical_actions if item.action_step == step)
+    step_waits = [item for item in waits if item[1] == step]
+    step_approvals = [item for item in approvals if item[1] == step]
+    starts = [
+        sequence
+        for (attempt_step, _, _), sequence in attempt_start_positions.items()
+        if attempt_step == step
+    ]
+    positions = policy_positions.get(step, [])
+    if (
+        len(waits) != 1
+        or len(approvals) != 1
+        or len(resumes) != 1
+        or len(step_waits) != 1
+        or len(step_approvals) != 1
+        or len(positions) != 2
+        or not starts
+    ):
+        return None
+    wait_sequence, _, wait_tool, wait_fingerprint = step_waits[0]
+    approval_sequence, _, approval_fingerprint, actor, allow = step_approvals[0]
+    resume_sequence = resumes[0]
+    if (
+        wait_tool != action.tool_name
+        or wait_fingerprint != action.action_fingerprint
+        or approval_fingerprint != action.action_fingerprint
+        or actor != "evaluation-reviewer"
+        or allow is not True
+        or not (
+            positions[0]
+            < wait_sequence
+            < approval_sequence
+            < resume_sequence
+            < positions[1]
+            < min(starts)
+        )
+        or case.pre_pause_write_execution_count != 0
+        or case.write_execution_count != 1
+    ):
+        return None
+    return True
 
 
 def _attempt_identity(payload: dict[str, Any]) -> tuple[int, str, int] | None:
@@ -572,6 +915,38 @@ def _invalid_accepted_output_count(case: CaseResult) -> int:
         except ValidationError:
             invalid += 1
     return invalid
+
+
+def _normalized_case_semantics(case: CaseResult) -> tuple[Any, ...]:
+    """Mode-independent claims that must match when retry policy is irrelevant."""
+    return (
+        case.final_status,
+        case.final_result,
+        case.expected_outcome,
+        case.observed_outcome,
+        case.correct,
+        case.terminal_success,
+        case.actual_tool_sequence,
+        case.attempt_evidence,
+        case.observed_faults,
+        case.output_validation_failures,
+        case.accepted_outputs,
+        case.approval_reconstructed,
+        case.pre_pause_write_execution_count,
+        case.write_execution_count,
+        case.store_run_count,
+    )
+
+
+def _canonical_json_digest(value: Any) -> str:
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _comparable(current: EvaluationReport, baseline: EvaluationReport) -> bool:

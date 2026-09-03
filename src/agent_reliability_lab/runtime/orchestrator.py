@@ -1,8 +1,10 @@
 """Checkpointed agent state-machine orchestration."""
 
 import asyncio
+import hashlib
+import json
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from pydantic import JsonValue
 
@@ -105,10 +107,22 @@ class DurableOrchestrator:
                 break
 
             action = self._gateway.stabilize_action(run, action)
+            fingerprint = action_fingerprint(action)
             failure = self._gateway.preflight(
                 run, action, faults=faults, check_approval=False
             )
             if failure is not None:
+                self._record(
+                    run,
+                    "tool.preflight.failed",
+                    {
+                        "action_step": run.current_step,
+                        "tool_name": action.tool_name,
+                        "action_fingerprint": fingerprint,
+                        "code": failure.error_code or "tool_preflight_failed",
+                    },
+                    status="error",
+                )
                 run = self._terminal_failure(
                     run,
                     failure.error_code or "tool_preflight_failed",
@@ -116,7 +130,6 @@ class DurableOrchestrator:
                 )
                 break
 
-            fingerprint = action_fingerprint(action)
             if self._gateway.requires_approval(action):
                 approval = self._store.get_approval(
                     run.id, action_step=run.current_step
@@ -178,7 +191,14 @@ class DurableOrchestrator:
             self._record(
                 run,
                 "run.checkpointed",
-                {"current_step": run.current_step, "cached": result.cached},
+                {
+                    "action_step": run.current_step - 1,
+                    "attempt": result.attempts,
+                    "current_step": run.current_step,
+                    "cached": result.cached,
+                    "output_digest": _canonical_json_digest(result.output),
+                    "context_digest": _canonical_json_digest(run.context),
+                },
             )
         return run
 
@@ -229,6 +249,17 @@ class DurableOrchestrator:
             parent_span_id=run.trace_id,
             status=status,
         )
+
+
+def _canonical_json_digest(value: Any) -> str:
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _scenario_fault_plan(scenario: Scenario) -> FaultPlan:

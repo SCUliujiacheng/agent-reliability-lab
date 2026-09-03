@@ -36,6 +36,7 @@ class LogicalActionProjection(ReportModel):
     action_step: int = Field(ge=0)
     kind: Literal["call_tool", "finish", "fail"]
     tool_name: str | None = None
+    action_payload: dict[str, JsonValue]
     action_fingerprint: str = Field(min_length=64, max_length=64)
 
 
@@ -54,6 +55,11 @@ class SuiteManifestEntry(ReportModel):
 class OrderedTraceEvidence(ReportModel):
     """Minimal ordered trace projection from which gate claims are derived."""
 
+    event_id: UUID
+    trace_id: UUID
+    span_id: UUID
+    parent_span_id: UUID | None
+    status: str = Field(min_length=1)
     sequence: int = Field(ge=1)
     event_type: Literal[
         "run.running",
@@ -61,11 +67,15 @@ class OrderedTraceEvidence(ReportModel):
         "tool.attempt.started",
         "fault.injected",
         "tool.output.validation_failed",
+        "tool.preflight.failed",
         "tool.attempt.failed",
         "tool.attempt.succeeded",
         "tool.attempt.cancelled",
         "run.waiting_approval",
         "approval.recorded",
+        "approval.denied",
+        "run.checkpointed",
+        "tool.retry.cancelled",
         "run.succeeded",
         "run.failed",
     ]
@@ -73,10 +83,10 @@ class OrderedTraceEvidence(ReportModel):
 
 
 class EvaluationProvenance(ReportModel):
-    report_version: Literal["3"] = "3"
-    schema_version: Literal["3"] = "3"
-    grader_version: Literal["exact-v3"] = "exact-v3"
-    normalization_version: Literal["baseline-v3"] = "baseline-v3"
+    report_version: Literal["4"] = "4"
+    schema_version: Literal["4"] = "4"
+    grader_version: Literal["exact-v4"] = "exact-v4"
+    normalization_version: Literal["baseline-v4"] = "baseline-v4"
     suite_hash: str = Field(min_length=64, max_length=64)
     suite_manifest: tuple[SuiteManifestEntry, ...]
     git_revision: str
