@@ -87,10 +87,10 @@ class OrderedTraceEvidence(ReportModel):
 
 
 class EvaluationProvenance(ReportModel):
-    report_version: Literal["5"] = "5"
-    schema_version: Literal["5"] = "5"
-    grader_version: Literal["exact-v5"] = "exact-v5"
-    normalization_version: Literal["baseline-v5"] = "baseline-v5"
+    report_version: Literal["6"] = "6"
+    schema_version: Literal["6"] = "6"
+    grader_version: Literal["exact-v6"] = "exact-v6"
+    normalization_version: Literal["baseline-v6"] = "baseline-v6"
     suite_hash: str = Field(min_length=64, max_length=64)
     suite_manifest: tuple[SuiteManifestEntry, ...]
     git_revision: str

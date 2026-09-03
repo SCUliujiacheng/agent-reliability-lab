@@ -51,6 +51,7 @@ from agent_reliability_lab.tools.contracts import ToolRegistry
 from agent_reliability_lab.tools.gateway import ToolGateway
 from agent_reliability_lab.tools.incident import (
     IncidentBackend,
+    deterministic_incident_actions,
     deterministic_incident_output,
     incident_registry,
 )
@@ -111,6 +112,19 @@ def suite_sha256(manifest: Sequence[SuiteManifestEntry]) -> str:
         allow_nan=False,
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _validate_supported_frozen_suite(
+    manifest: Sequence[SuiteManifestEntry],
+) -> None:
+    """Fail closed unless every scenario exactly matches a built-in projection."""
+    for entry in manifest:
+        expected = deterministic_incident_actions(entry.scenario_id)
+        actual = tuple(action.action_payload for action in entry.logical_actions)
+        if expected is None or actual != expected:
+            raise EvaluationInfrastructureError(
+                f"unsupported frozen scenario projection: {entry.scenario_id}"
+            )
 
 
 def canonical_action_fingerprint(action: AgentAction | dict[str, Any]) -> str:
@@ -188,6 +202,7 @@ async def run_evaluation(
 
     root = suite.resolve()
     manifest = build_suite_manifest(root)
+    _validate_supported_frozen_suite(manifest)
     initial_hash = suite_sha256(manifest)
     scenarios = [load_scenario(root / entry.relative_path) for entry in manifest]
     for scenario in scenarios:

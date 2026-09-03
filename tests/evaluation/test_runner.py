@@ -22,7 +22,11 @@ from agent_reliability_lab.evaluation.runner import (
 )
 from agent_reliability_lab.scenarios.loader import load_scenario
 from agent_reliability_lab.storage.store import SQLiteRunStore
-from agent_reliability_lab.tools.incident import IncidentBackend, incident_registry
+from agent_reliability_lab.tools.incident import (
+    IncidentBackend,
+    deterministic_incident_actions,
+    incident_registry,
+)
 
 SUITE = Path(__file__).parents[2] / "scenarios" / "incident-response"
 
@@ -51,9 +55,34 @@ def test_suite_hash_uses_exact_bytes_and_sorted_posix_relative_paths(
     assert suite_sha256(build_suite_manifest(suite)) != original
 
 
+@pytest.mark.asyncio
+async def test_evaluation_fails_closed_for_non_builtin_suite(tmp_path: Path) -> None:
+    suite = tmp_path / "custom-suite"
+    suite.mkdir()
+    (suite / "custom.yaml").write_text(
+        "id: custom\n"
+        "version: 1\n"
+        "actions: [{type: fail, code: custom, explanation: custom}]\n"
+        "expected_outcome: custom\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        EvaluationInfrastructureError,
+        match="unsupported frozen scenario projection: custom",
+    ):
+        await run_evaluation(suite)
+
+
 def test_manifest_freezes_initial_context_and_builtin_output_digests() -> None:
     manifest = build_suite_manifest(SUITE)
     normal = next(entry for entry in manifest if entry.scenario_id == "normal-success")
+
+    assert all(
+        tuple(action.action_payload for action in entry.logical_actions)
+        == deterministic_incident_actions(entry.scenario_id)
+        for entry in manifest
+    )
 
     assert normal.initial_context == {"incident": "checkout-latency"}
     assert [action.expected_output_digest for action in normal.logical_actions] == [

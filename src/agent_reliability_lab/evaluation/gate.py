@@ -31,6 +31,7 @@ from agent_reliability_lab.evaluation.runner import (
 )
 from agent_reliability_lab.tools.incident import (
     IncidentBackend,
+    deterministic_incident_actions,
     deterministic_incident_initial_context,
     deterministic_incident_output,
     incident_registry,
@@ -222,6 +223,14 @@ def _manifest_hash(report: EvaluationReport) -> str:
 
 def _case_evidence_errors(case: CaseResult, frozen: SuiteManifestEntry) -> list[str]:
     errors: list[str] = []
+    expected_actions = deterministic_incident_actions(frozen.scenario_id)
+    if (
+        expected_actions is not None
+        and tuple(action.action_payload for action in frozen.logical_actions)
+        != expected_actions
+    ):
+        errors.append("case_evidence_mismatch")
+        return errors
     expected_initial_context = deterministic_incident_initial_context(
         frozen.scenario_id
     )

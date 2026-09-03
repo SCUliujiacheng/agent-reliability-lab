@@ -408,10 +408,10 @@ def make_report(
         for case in resilient_cases
     )
     provenance = EvaluationProvenance(
-        report_version="5",
-        schema_version="5",
-        grader_version="exact-v5",
-        normalization_version="baseline-v5",
+        report_version="6",
+        schema_version="6",
+        grader_version="exact-v6",
+        normalization_version="baseline-v6",
         suite_hash=suite_hash or suite_sha256(manifest),
         suite_manifest=manifest,
         git_revision="f" * 40,

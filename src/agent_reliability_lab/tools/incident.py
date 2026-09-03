@@ -1,5 +1,6 @@
 """Deterministic incident-response tools used by the reliability scenarios."""
 
+from copy import deepcopy
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -9,6 +10,137 @@ from agent_reliability_lab.tools.contracts import (
     ToolExecutionContext,
     ToolRegistry,
 )
+
+_FROZEN_INCIDENT_ACTIONS: dict[str, tuple[dict[str, JsonValue], ...]] = {
+    "approval-reconstruction": (
+        {
+            "type": "call_tool",
+            "tool_name": "get_deployment",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "prepare_rollback",
+            "arguments": {"deployment_id": "deploy-2026-09-04-001"},
+            "idempotency_key": "approval-reconstruction-v1",
+        },
+        {
+            "type": "finish",
+            "summary": "Rollback was prepared after durable approval reconstruction.",
+            "evidence_refs": ["deployment", "approval"],
+            "outcome": "prepared",
+        },
+    ),
+    "malformed-output-rejected": (
+        {
+            "type": "call_tool",
+            "tool_name": "get_service_health",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "get_deployment",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "finish",
+            "summary": "This action is unreachable after safe schema rejection.",
+            "evidence_refs": [],
+            "outcome": "diagnosed",
+        },
+    ),
+    "normal-success": (
+        {
+            "type": "call_tool",
+            "tool_name": "get_service_health",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "search_recent_logs",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "get_deployment",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "finish",
+            "summary": "Checkout degradation traced to the current deployment.",
+            "evidence_refs": ["health", "logs", "deployment"],
+            "outcome": "diagnosed",
+        },
+    ),
+    "permanent-invalid-input": (
+        {
+            "type": "call_tool",
+            "tool_name": "search_recent_logs",
+            "arguments": {"unsupported_filter": True},
+            "idempotency_key": None,
+        },
+        {
+            "type": "finish",
+            "summary": "This action is unreachable after input rejection.",
+            "evidence_refs": [],
+            "outcome": "diagnosed",
+        },
+    ),
+    "rate-limit-recovery": (
+        {
+            "type": "call_tool",
+            "tool_name": "get_service_health",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "get_deployment",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "finish",
+            "summary": (
+                "Deployment evidence was collected after rate limiting cleared."
+            ),
+            "evidence_refs": ["health", "deployment"],
+            "outcome": "diagnosed",
+        },
+    ),
+    "timeout-recovery": (
+        {
+            "type": "call_tool",
+            "tool_name": "get_service_health",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "search_recent_logs",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "call_tool",
+            "tool_name": "get_deployment",
+            "arguments": {},
+            "idempotency_key": None,
+        },
+        {
+            "type": "finish",
+            "summary": "Investigation recovered after the transient timeout.",
+            "evidence_refs": ["health", "logs", "deployment"],
+            "outcome": "diagnosed",
+        },
+    ),
+}
 
 
 class EmptyInput(BaseModel):
@@ -169,11 +301,19 @@ def deterministic_incident_output(
             "deployment_id": "deploy-2026-09-04-001",
             "version": "2026.09.04.1",
         }
-    if tool_name == "prepare_rollback" and set(arguments) == {"deployment_id"}:
-        deployment_id = arguments["deployment_id"]
-        if isinstance(deployment_id, str) and deployment_id:
-            return {"deployment_id": deployment_id, "prepared": True}
+    if tool_name == "prepare_rollback" and arguments == {
+        "deployment_id": "deploy-2026-09-04-001"
+    }:
+        return {"deployment_id": "deploy-2026-09-04-001", "prepared": True}
     return None
+
+
+def deterministic_incident_actions(
+    scenario_id: str,
+) -> tuple[dict[str, JsonValue], ...] | None:
+    """Return an independent copy of one built-in scenario's golden actions."""
+    actions = _FROZEN_INCIDENT_ACTIONS.get(scenario_id)
+    return deepcopy(actions) if actions is not None else None
 
 
 def deterministic_incident_initial_context(

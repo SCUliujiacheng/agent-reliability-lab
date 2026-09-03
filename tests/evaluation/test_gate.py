@@ -15,11 +15,13 @@ from agent_reliability_lab.evaluation.models import (
     CaseResult,
     EvaluationReport,
     FaultEvidence,
+    LogicalActionProjection,
     ModeResult,
     OrderedTraceEvidence,
     OutputValidationEvidence,
 )
 from agent_reliability_lab.evaluation.runner import (
+    canonical_action_fingerprint,
     compare_modes,
     run_evaluation,
     suite_sha256,
@@ -163,6 +165,30 @@ def _coordinated_output_rewrite(
         case,
         tuple(trace),
         accepted_outputs=accepted_outputs,
+    )
+
+
+def _replace_manifest_actions(
+    report: EvaluationReport,
+    *,
+    scenario_id: str,
+    logical_actions: tuple[LogicalActionProjection, ...],
+) -> EvaluationReport:
+    manifest = tuple(
+        entry.model_copy(update={"logical_actions": logical_actions})
+        if entry.scenario_id == scenario_id
+        else entry
+        for entry in report.provenance.suite_manifest
+    )
+    return report.model_copy(
+        update={
+            "provenance": report.provenance.model_copy(
+                update={
+                    "suite_manifest": manifest,
+                    "suite_hash": suite_sha256(manifest),
+                }
+            )
+        }
     )
 
 
@@ -1689,6 +1715,179 @@ async def test_gate_rejects_coordinated_frozen_initial_context_rewrite() -> None
 
     assert result.comparable is False
     assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+async def test_gate_rejects_full_approval_write_target_rewrite_with_or_without_baseline() -> (
+    None
+):
+    baseline = await run_evaluation(SUITE)
+    fabricated_id = "deploy-attacker-controlled"
+    fabricated_output = {"deployment_id": fabricated_id, "prepared": True}
+    fabricated_digest = _attack_digest(fabricated_output)
+    action_payload = {
+        "type": "call_tool",
+        "tool_name": "prepare_rollback",
+        "arguments": {"deployment_id": fabricated_id},
+        "idempotency_key": "approval-reconstruction-v1",
+    }
+    action_fingerprint = canonical_action_fingerprint(action_payload)
+    changed_report = baseline
+    changed_actions: tuple[LogicalActionProjection, ...] | None = None
+    for mode in ("fragile", "resilient"):
+        case = next(
+            item
+            for item in baseline.modes[mode].cases
+            if item.scenario_id == "approval-reconstruction"
+        )
+        changed = _coordinated_output_rewrite(
+            case,
+            action_step=1,
+            output=fabricated_output,
+            initial_context={"incident": "rollback-candidate"},
+        )
+        changed_actions = tuple(
+            action.model_copy(
+                update={
+                    "action_payload": action_payload,
+                    "action_fingerprint": action_fingerprint,
+                    "expected_output_digest": fabricated_digest,
+                }
+            )
+            if action.action_step == 1
+            else action
+            for action in case.logical_actions
+        )
+        trace = tuple(
+            item.model_copy(
+                update={
+                    "payload": (
+                        {**action_payload, "action_step": 1}
+                        if item.event_type == "policy.action"
+                        and item.payload.get("action_step") == 1
+                        else {
+                            **item.payload,
+                            "action_fingerprint": action_fingerprint,
+                        }
+                        if item.event_type
+                        in {"run.waiting_approval", "approval.recorded"}
+                        else item.payload
+                    )
+                }
+            )
+            for item in changed.trace_evidence
+        )
+        changed = _refresh_trace(
+            changed,
+            trace,
+            logical_actions=changed_actions,
+        )
+        changed_report = _replace_named_case(changed_report, mode, changed)
+    assert changed_actions is not None
+    changed_report = _replace_manifest_actions(
+        changed_report,
+        scenario_id="approval-reconstruction",
+        logical_actions=changed_actions,
+    )
+
+    without_baseline = enforce_gate(changed_report)
+    with_baseline = enforce_gate(changed_report, baseline=baseline)
+
+    for result in (without_baseline, with_baseline):
+        assert result.comparable is False
+        assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["other_tool_args", "finish_payload"])
+async def test_gate_rejects_other_frozen_action_payload_rewrites(
+    mutation: str,
+) -> None:
+    baseline = await run_evaluation(SUITE)
+    scenario_id = (
+        "permanent-invalid-input" if mutation == "other_tool_args" else "normal-success"
+    )
+    action_step = 0 if mutation == "other_tool_args" else 3
+    if mutation == "other_tool_args":
+        action_payload = {
+            "type": "call_tool",
+            "tool_name": "search_recent_logs",
+            "arguments": {"different_invalid_filter": True},
+            "idempotency_key": None,
+        }
+    else:
+        action_payload = {
+            "type": "finish",
+            "summary": "Coordinated but forged final summary.",
+            "evidence_refs": ["health", "logs", "deployment"],
+            "outcome": "diagnosed",
+        }
+    fingerprint = canonical_action_fingerprint(action_payload)
+    changed_report = baseline
+    changed_actions: tuple[LogicalActionProjection, ...] | None = None
+    for mode in ("fragile", "resilient"):
+        case = next(
+            item
+            for item in baseline.modes[mode].cases
+            if item.scenario_id == scenario_id
+        )
+        changed_actions = tuple(
+            action.model_copy(
+                update={
+                    "action_payload": action_payload,
+                    "action_fingerprint": fingerprint,
+                }
+            )
+            if action.action_step == action_step
+            else action
+            for action in case.logical_actions
+        )
+        trace = tuple(
+            item.model_copy(
+                update={
+                    "payload": (
+                        {**action_payload, "action_step": action_step}
+                        if item.event_type == "policy.action"
+                        and item.payload.get("action_step") == action_step
+                        else {
+                            **item.payload,
+                            "action_fingerprint": fingerprint,
+                        }
+                        if mutation == "other_tool_args"
+                        and item.event_type == "tool.preflight.failed"
+                        else {
+                            **item.payload,
+                            "summary": action_payload["summary"],
+                        }
+                        if mutation == "finish_payload"
+                        and item.event_type == "run.succeeded"
+                        else item.payload
+                    )
+                }
+            )
+            for item in case.trace_evidence
+        )
+        updates: dict[str, object] = {"logical_actions": changed_actions}
+        if mutation == "finish_payload":
+            updates["final_result"] = {
+                **case.final_result,
+                "summary": action_payload["summary"],
+            }
+        changed = _refresh_trace(case, trace, **updates)
+        changed_report = _replace_named_case(changed_report, mode, changed)
+    assert changed_actions is not None
+    changed_report = _replace_manifest_actions(
+        changed_report,
+        scenario_id=scenario_id,
+        logical_actions=changed_actions,
+    )
+
+    for result in (
+        enforce_gate(changed_report),
+        enforce_gate(changed_report, baseline=baseline),
+    ):
+        assert result.comparable is False
+        assert "case_evidence_mismatch" in result.infrastructure_errors
 
 
 def test_gate_rejects_accepted_output_reassigned_to_unknown_action() -> None:
