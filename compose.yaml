@@ -1,0 +1,72 @@
+name: agent-reliability-lab
+
+services:
+  api:
+    image: agent-reliability-lab-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ARL_DATA_DIR: /var/lib/arl
+      ARL_DATABASE_PATH: agent-reliability-lab.db
+      ARL_SCENARIO_DIR: /app/scenarios/incident-response
+      ARL_EVALUATION_SUITE: incident-response
+      ARL_EVALUATION_SUITE_DIR: /app/scenarios/incident-response
+      ARL_MAX_REQUEST_BODY_BYTES: "65536"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - arl-data:/var/lib/arl
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  web:
+    image: agent-reliability-lab-web:local
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO
+        - /dev/null
+        - http://127.0.0.1:8080/health
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  arl-data:

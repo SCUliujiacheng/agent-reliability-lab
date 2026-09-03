@@ -1,0 +1,200 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22.20.0"
+  UV_VERSION: "0.11.32"
+
+jobs:
+  python:
+    name: Python quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install locked environment
+        run: |
+          python -m pip install --disable-pip-version-check "uv==${UV_VERSION}"
+          uv sync --locked --dev
+      - name: Run Python tests
+        run: uv run pytest -v
+      - name: Run Ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Run mypy
+        run: uv run mypy src
+
+  frontend:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci --prefix web
+      - name: Run frontend tests
+        run: npm --prefix web test -- --run
+      - name: Lint frontend
+        run: npm --prefix web run lint
+      - name: Type-check frontend
+        run: npm --prefix web run typecheck
+      - name: Build frontend
+        run: npm --prefix web run build
+
+  benchmark:
+    name: Deterministic benchmark gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install locked environment
+        run: |
+          python -m pip install --disable-pip-version-check "uv==${UV_VERSION}"
+          uv sync --locked --dev
+      - name: Generate deterministic report
+        run: uv run arl eval scenarios/incident-response --output artifacts/ci-report.json
+      - name: Enforce reliability and baseline gates
+        run: >-
+          uv run arl gate artifacts/ci-report.json
+          --baseline benchmarks/baseline-report.json
+
+  containers:
+    name: Container and Compose smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build API and web images
+        run: docker compose build
+      - name: Generate API SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: agent-reliability-lab-api:local
+          artifact-name: api-sbom.spdx.json
+          format: spdx-json
+      - name: Generate web SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: agent-reliability-lab-web:local
+          artifact-name: web-sbom.spdx.json
+          format: spdx-json
+      - name: Scan API image for fixed critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: agent-reliability-lab-api:local
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+      - name: Scan web image for fixed critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: agent-reliability-lab-web:local
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+          skip-setup-trivy: true
+      - name: Prove both images run unprivileged
+        run: |
+          test "$(docker compose run --rm --no-deps --entrypoint id api -u)" != "0"
+          test "$(docker compose run --rm --no-deps --entrypoint id web -u)" != "0"
+      - name: Exercise same-origin HTTP and SQLite persistence
+        run: |
+          docker compose up --detach --wait --no-build
+          created="$(curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data '{"scenario_id":"approval-reconstruction","mode":"resilient"}' \
+            http://127.0.0.1:8080/v1/runs)"
+          export CREATED="$created"
+          run_id="$(python3 -c 'import json, os; print(json.loads(os.environ["CREATED"])["id"])')"
+          python3 -c 'import json, os; assert json.loads(os.environ["CREATED"])["status"] == "waiting_approval"'
+
+          docker compose restart api
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/health >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "API did not recover after restart" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          reconstructed="$(curl --fail --silent --show-error \
+            "http://127.0.0.1:8080/v1/runs/${run_id}")"
+          export RECONSTRUCTED="$reconstructed"
+          python3 -c 'import json, os; assert json.loads(os.environ["RECONSTRUCTED"])["status"] == "waiting_approval"'
+
+          decision='{"actor":"ci-reviewer","allow":true,"reason":"compose-persistence-check"}'
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data "$decision" \
+            "http://127.0.0.1:8080/v1/runs/${run_id}/approvals" >/dev/null
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data "$decision" \
+            "http://127.0.0.1:8080/v1/runs/${run_id}/approvals" >/dev/null
+
+          trace="$(curl --fail --silent --show-error \
+            "http://127.0.0.1:8080/v1/runs/${run_id}/trace?limit=100")"
+          export TRACE="$trace"
+          python3 - <<'PY'
+          import json
+          import os
+
+          events = json.loads(os.environ["TRACE"])["events"]
+          assert sum(event["event_type"] == "approval.recorded" for event in events) == 1
+          assert sum(
+              event["event_type"] == "tool.attempt.succeeded"
+              and event["payload"].get("tool_name") == "prepare_rollback"
+              for event in events
+          ) == 1
+          assert events[-1]["event_type"] == "run.succeeded"
+          PY
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down Compose stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
