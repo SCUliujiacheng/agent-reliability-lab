@@ -7,6 +7,7 @@ from uuid import UUID, uuid5
 
 import pytest
 
+import agent_reliability_lab.evaluation.gate as gate_module
 from agent_reliability_lab.evaluation.gate import enforce_gate
 from agent_reliability_lab.evaluation.graders import aggregate_cases
 from agent_reliability_lab.evaluation.models import (
@@ -31,6 +32,41 @@ from agent_reliability_lab.evaluation.runner import (
 from .conftest import make_case, make_report
 
 SUITE = Path(__file__).parents[2] / "scenarios" / "incident-response"
+
+
+def _trust_synthetic_reports(
+    monkeypatch: pytest.MonkeyPatch, *reports: EvaluationReport
+) -> None:
+    """Inject explicit test-only anchors for synthetic metric fixtures."""
+    original_actions = gate_module.deterministic_incident_actions
+    original_context = gate_module.deterministic_incident_initial_context
+    actions_by_id = {
+        entry.scenario_id: tuple(
+            action.action_payload for action in entry.logical_actions
+        )
+        for report in reports
+        for entry in report.provenance.suite_manifest
+    }
+    context_by_id = {
+        entry.scenario_id: entry.initial_context
+        for report in reports
+        for entry in report.provenance.suite_manifest
+    }
+
+    monkeypatch.setattr(
+        gate_module,
+        "deterministic_incident_actions",
+        lambda scenario_id: (
+            original_actions(scenario_id) or actions_by_id.get(scenario_id)
+        ),
+    )
+    monkeypatch.setattr(
+        gate_module,
+        "deterministic_incident_initial_context",
+        lambda scenario_id: (
+            original_context(scenario_id) or context_by_id.get(scenario_id)
+        ),
+    )
 
 
 def _new_evidence(
@@ -192,7 +228,9 @@ def _replace_manifest_actions(
     )
 
 
-def test_gate_accepts_exact_threshold_boundaries() -> None:
+def test_gate_accepts_exact_threshold_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cases = tuple(
         make_case(
             scenario_id=f"case-{index}",
@@ -203,6 +241,7 @@ def test_gate_accepts_exact_threshold_boundaries() -> None:
         for index in range(5)
     )
     report = make_report(resilient_cases=cases)
+    _trust_synthetic_reports(monkeypatch, report)
 
     result = enforce_gate(report)
 
@@ -210,7 +249,9 @@ def test_gate_accepts_exact_threshold_boundaries() -> None:
     assert result.failures == {}
 
 
-def test_gate_fails_below_recovery_and_with_zero_denominator() -> None:
+def test_gate_fails_below_recovery_and_with_zero_denominator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     below = tuple(
         make_case(
             scenario_id=f"case-{index}",
@@ -219,12 +260,16 @@ def test_gate_fails_below_recovery_and_with_zero_denominator() -> None:
         )
         for index in range(4)
     )
-    result = enforce_gate(make_report(resilient_cases=below))
+    below_report = make_report(resilient_cases=below)
+    _trust_synthetic_reports(monkeypatch, below_report)
+    result = enforce_gate(below_report)
     assert result.passed is False
     assert "recovery_rate" in result.failures
 
     no_faults = (make_case(recovered=0, recoverable=0),)
-    zero = enforce_gate(make_report(resilient_cases=no_faults))
+    no_fault_report = make_report(resilient_cases=no_faults)
+    _trust_synthetic_reports(monkeypatch, no_fault_report)
+    zero = enforce_gate(no_fault_report)
     assert zero.passed is False
     assert "recovery_rate" in zero.failures
 
@@ -255,8 +300,11 @@ def test_gate_recomputes_summary_and_rejects_tampering() -> None:
     assert "summary_mismatch" in result.infrastructure_errors
 
 
-def test_gate_rejects_correct_flag_that_contradicts_exact_outcomes() -> None:
+def test_gate_rejects_correct_flag_that_contradicts_exact_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     report = make_report()
+    _trust_synthetic_reports(monkeypatch, report)
     case = report.modes["resilient"].cases[0]
     tampered = _replace_resilient_case(
         report,
@@ -269,8 +317,11 @@ def test_gate_rejects_correct_flag_that_contradicts_exact_outcomes() -> None:
     assert "case_outcome_mismatch" in result.infrastructure_errors
 
 
-def test_gate_rejects_lcs_and_sequence_counter_contradictions() -> None:
+def test_gate_rejects_lcs_and_sequence_counter_contradictions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     report = make_report()
+    _trust_synthetic_reports(monkeypatch, report)
     case = report.modes["resilient"].cases[0]
     tampered = _replace_resilient_case(
         report,
@@ -292,8 +343,10 @@ def test_gate_rejects_lcs_and_sequence_counter_contradictions() -> None:
 )
 def test_gate_rejects_logical_and_unnecessary_call_counter_contradictions(
     updates: dict[str, int],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     report = make_report()
+    _trust_synthetic_reports(monkeypatch, report)
     case = report.modes["resilient"].cases[0]
 
     result = enforce_gate(
@@ -1915,6 +1968,55 @@ def test_gate_rejects_accepted_output_reassigned_to_unknown_action() -> None:
     assert "case_evidence_mismatch" in result.infrastructure_errors
 
 
+@pytest.mark.asyncio
+async def test_gate_fails_closed_for_unknown_scenario_with_or_without_baseline() -> (
+    None
+):
+    baseline = await run_evaluation(SUITE)
+    original_id = "normal-success"
+    fabricated_id = "custom-unknown"
+    modes = {
+        mode: result.model_copy(
+            update={
+                "cases": tuple(
+                    case.model_copy(update={"scenario_id": fabricated_id})
+                    if case.scenario_id == original_id
+                    else case
+                    for case in result.cases
+                )
+            }
+        )
+        for mode, result in baseline.modes.items()
+    }
+    manifest = tuple(
+        entry.model_copy(update={"scenario_id": fabricated_id})
+        if entry.scenario_id == original_id
+        else entry
+        for entry in baseline.provenance.suite_manifest
+    )
+    changed_report = baseline.model_copy(
+        update={
+            "modes": modes,
+            "provenance": baseline.provenance.model_copy(
+                update={
+                    "suite_manifest": manifest,
+                    "suite_hash": suite_sha256(manifest),
+                }
+            ),
+        }
+    )
+    changed_report = changed_report.model_copy(
+        update={"comparison": compare_modes(changed_report)}
+    )
+
+    for supplied_baseline in (None, baseline):
+        result = enforce_gate(changed_report, supplied_baseline)
+
+        assert result.passed is False
+        assert result.comparable is False
+        assert "case_evidence_mismatch" in result.infrastructure_errors
+
+
 def test_gate_rejects_cross_mode_expected_projection_divergence() -> None:
     report = make_report()
     fragile = report.modes["fragile"].cases[0]
@@ -1951,7 +2053,9 @@ def test_gate_rejects_self_consistent_cases_that_do_not_cover_manifest() -> None
     assert "case_manifest_mismatch" in result.infrastructure_errors
 
 
-def test_success_regression_exactly_point_zero_five_passes_but_more_fails() -> None:
+def test_success_regression_exactly_point_zero_five_passes_but_more_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     baseline_cases = tuple(
         make_case(scenario_id=f"case-{index}") for index in range(20)
     )
@@ -1969,8 +2073,6 @@ def test_success_regression_exactly_point_zero_five_passes_but_more_fails() -> N
     )
     current = make_report(resilient_cases=at_boundary)
 
-    assert enforce_gate(current, baseline=baseline).passed is True
-
     beyond = tuple(
         make_case(
             scenario_id=f"case-{index}",
@@ -1982,14 +2084,22 @@ def test_success_regression_exactly_point_zero_five_passes_but_more_fails() -> N
         )
         for index in range(20)
     )
-    result = enforce_gate(make_report(resilient_cases=beyond), baseline=baseline)
+    beyond_report = make_report(resilient_cases=beyond)
+    _trust_synthetic_reports(monkeypatch, baseline, current, beyond_report)
+
+    assert enforce_gate(current, baseline=baseline).passed is True
+
+    result = enforce_gate(beyond_report, baseline=baseline)
     assert result.passed is False
     assert "success_regression" in result.failures
 
 
-def test_incomparable_baseline_is_an_infrastructure_result() -> None:
+def test_incomparable_baseline_is_an_infrastructure_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     current = make_report()
     baseline = make_report(resilient_cases=(make_case(scenario_id="different-case"),))
+    _trust_synthetic_reports(monkeypatch, current, baseline)
 
     result = enforce_gate(current, baseline=baseline)
 

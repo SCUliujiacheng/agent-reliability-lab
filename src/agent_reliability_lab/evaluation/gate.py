@@ -224,20 +224,19 @@ def _manifest_hash(report: EvaluationReport) -> str:
 def _case_evidence_errors(case: CaseResult, frozen: SuiteManifestEntry) -> list[str]:
     errors: list[str] = []
     expected_actions = deterministic_incident_actions(frozen.scenario_id)
+    expected_initial_context = deterministic_incident_initial_context(
+        frozen.scenario_id
+    )
+    if expected_actions is None or expected_initial_context is None:
+        errors.append("case_evidence_mismatch")
+        return errors
     if (
-        expected_actions is not None
-        and tuple(action.action_payload for action in frozen.logical_actions)
+        tuple(action.action_payload for action in frozen.logical_actions)
         != expected_actions
     ):
         errors.append("case_evidence_mismatch")
         return errors
-    expected_initial_context = deterministic_incident_initial_context(
-        frozen.scenario_id
-    )
-    if (
-        expected_initial_context is not None
-        and frozen.initial_context != expected_initial_context
-    ):
+    if frozen.initial_context != expected_initial_context:
         errors.append("case_evidence_mismatch")
         return errors
     trace = _trace_claims(case, frozen)
