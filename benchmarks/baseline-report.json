@@ -5,16 +5,16 @@
       "timeout-recovery"
     ],
     "invalid_output_rate_delta": 0.0,
-    "p50_latency_ms_delta": 6.1508,
-    "p95_latency_ms_delta": -8.243399999999994,
+    "p50_latency_ms_delta": 7.535800000000002,
+    "p95_latency_ms_delta": -8.750700000000002,
     "recovery_rate_delta": 1.0,
     "retry_attempt_count_delta": 2,
     "task_correctness_rate_delta": 0.33333333333333337,
     "tool_sequence_accuracy_delta": 0.05555555555555558,
     "unnecessary_call_count_delta": 0
   },
-  "evaluation_id": "283d42c8-3249-4537-b6f5-985282368a26",
-  "generated_at": "2026-09-03T20:47:26.661437Z",
+  "evaluation_id": "cf9cc0d3-c423-4f9e-bd5b-1091829e6fa3",
+  "generated_at": "2026-09-03T21:20:32.339572Z",
   "modes": {
     "fragile": {
       "cases": [
@@ -84,22 +84,45 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 66226700,
+          "latency_ns": 67846900,
           "logical_actions": [
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+              "action_payload": {
+                "arguments": {
+                  "deployment_id": "deploy-2026-09-04-001"
+                },
+                "idempotency_key": "approval-reconstruction-v1",
+                "tool_name": "prepare_rollback",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "prepare_rollback"
             },
             {
               "action_fingerprint": "2c8ad720fe0e5f32e5e835403f4ec33458738872abfed4642c58cca29f7e90a2",
+              "action_payload": {
+                "evidence_refs": [
+                  "deployment",
+                  "approval"
+                ],
+                "outcome": "prepared",
+                "summary": "Rollback was prepared after durable approval reconstruction.",
+                "type": "finish"
+              },
               "action_step": 2,
               "kind": "finish",
               "tool_name": null
@@ -114,7 +137,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "1f542346-11ca-4434-9ef1-3c260bcb8b15",
+          "run_id": "bf595b8a-44db-4e9d-81f9-661c11e839d2",
           "scenario_id": "approval-reconstruction",
           "scenario_path": "approval-reconstruction.yaml",
           "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
@@ -123,17 +146,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "3bdedaf98bffcaa295b89f221ca230f2bae9dba061b8fd959433693066fed720",
+          "trace_digest": "1518320474d5fc071a7ddd7c54615a982236a59638e0004398cc612c65b1eeee",
           "trace_evidence": [
             {
+              "event_id": "c9a5f6c5-6eef-4418-a4a3-8caef9c1d3c7",
               "event_type": "run.running",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "1092489d-a450-4d69-8784-467fdb1ca07e",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "e4b04615-4df6-4f2d-aa99-e0b4607f4256",
               "event_type": "policy.action",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -141,28 +171,64 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "dd46825a-aea1-4c87-bd0a-0a965502a8d2",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "20bb8af1-01ef-4094-9448-39eeb7453b5f",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "6e961c72-bacc-4dde-beca-d8acbf8b593d",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "f1174ebc-bdd6-458b-a0b7-7bce04cbb7c3",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "version": "2026.09.04.1"
+                },
                 "tool_name": "get_deployment"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "6e961c72-bacc-4dde-beca-d8acbf8b593d",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "7c54b4a6-1735-4e7d-9217-33022792387c",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "548cc7b3a4d9bf39c66acfe6e4f931cad92d4db6a26833767d99eab9903f8e72",
+                "current_step": 1,
+                "output_digest": "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0"
+              },
+              "sequence": 5,
+              "span_id": "aa6f9ca8-e8ee-49f9-a1b9-7ed51c524e2c",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
+            },
+            {
+              "event_id": "a2dab2c3-8fc9-428f-98b3-24f75933e671",
               "event_type": "policy.action",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 1,
                 "arguments": {
@@ -172,36 +238,56 @@
                 "tool_name": "prepare_rollback",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "ae765022-d3bd-48ba-b643-a3b9a4c82ac8",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "4049384b-8e09-446b-aea4-b1a76fd0fb12",
               "event_type": "run.waiting_approval",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
                 "step": 1,
                 "tool_name": "prepare_rollback"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "b9693686-b4ee-4875-bfb9-2dcb9a87cd5d",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "6eea692e-bc6f-4969-a3f3-305acf049de6",
               "event_type": "approval.recorded",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
                 "action_step": 1,
                 "actor": "evaluation-reviewer",
                 "allow": true
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "118ff633-4cff-44aa-9c14-cbb49b886561",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "fe1cac0a-75d8-4024-ab4d-7e3c6cfb5c4a",
               "event_type": "run.running",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "from_status": "waiting_approval"
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "ccded6eb-21ea-46de-b30a-4b276f93d884",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "056111c8-15a4-4380-869c-06e4fdddc30e",
               "event_type": "policy.action",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 1,
                 "arguments": {
@@ -211,28 +297,64 @@
                 "tool_name": "prepare_rollback",
                 "type": "call_tool"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "76520bb9-bbfc-4517-8b36-b723452ab26e",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "20026d9f-f2b7-4dbc-80a0-61f0dbe3880e",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "prepare_rollback"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "76d20256-85ea-4906-9c7a-37e1a28c0902",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "50720fe7-6328-4336-b70b-3c9b1b27d522",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "prepared": true
+                },
                 "tool_name": "prepare_rollback"
               },
-              "sequence": 12
+              "sequence": 12,
+              "span_id": "76d20256-85ea-4906-9c7a-37e1a28c0902",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "f6dbb9e0-86ea-4484-9073-6280717cdd9e",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "9d058fe055c68c5f1ed69a359bb34acd25d26291cab8abcc8578a2beaca2ce81",
+                "current_step": 2,
+                "output_digest": "7d9048a9281571ca6006fcd75510999698c89a37cc7ad9fd38be050b86f8fdef"
+              },
+              "sequence": 13,
+              "span_id": "4d805eda-dfe8-49e8-a1d9-997d6f6d4e9b",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
+            },
+            {
+              "event_id": "4745d4a3-bf0e-4005-a1cc-e927ee8ee65c",
               "event_type": "policy.action",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "action_step": 2,
                 "evidence_refs": [
@@ -243,10 +365,15 @@
                 "summary": "Rollback was prepared after durable approval reconstruction.",
                 "type": "finish"
               },
-              "sequence": 14
+              "sequence": 14,
+              "span_id": "f9ccad63-4d84-4ba7-a148-28b7760415d9",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             },
             {
+              "event_id": "73593475-a415-4634-92ca-512427ec21c3",
               "event_type": "run.succeeded",
+              "parent_span_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
               "payload": {
                 "evidence_refs": [
                   "deployment",
@@ -255,10 +382,13 @@
                 "outcome": "prepared",
                 "summary": "Rollback was prepared after durable approval reconstruction."
               },
-              "sequence": 15
+              "sequence": 15,
+              "span_id": "436817b9-76ae-4479-b177-13a08daf6dbe",
+              "status": "ok",
+              "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2"
             }
           ],
-          "trace_id": "713647c7-43e4-4e64-917b-c444568f5573",
+          "trace_id": "38eb77bd-e9a5-4e07-b6fe-89a4e80f8db2",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 1
@@ -323,22 +453,40 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 1,
           "invalid_output_rejected_count": 1,
-          "latency_ns": 28277500,
+          "latency_ns": 28595300,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "6d9426e8b02fd84b7c002b99a55c60509c8168427ad92a9271852ad2c76af4b5",
+              "action_payload": {
+                "evidence_refs": [],
+                "outcome": "diagnosed",
+                "summary": "This action is unreachable after safe schema rejection.",
+                "type": "finish"
+              },
               "action_step": 2,
               "kind": "finish",
               "tool_name": null
@@ -368,7 +516,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "6d494a94-a1aa-437c-8e4d-089d8265d5b4",
+          "run_id": "cf7d1e88-600b-4879-acb2-a661dc9dd763",
           "scenario_id": "malformed-output-rejected",
           "scenario_path": "malformed-output-rejected.yaml",
           "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
@@ -377,17 +525,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "116268d68b3ff28a8a99fff524e35aac52e2cf47fc5f26e4f755c05c5f15abb8",
+          "trace_digest": "bf4139a9ae74a56bf5fd2a4b5938f3298baf4f97d8deb86b83351606ec4a60c1",
           "trace_evidence": [
             {
+              "event_id": "74576b9c-3dce-4c06-bd4e-11639e07635f",
               "event_type": "run.running",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "fdba4c39-79e0-44a3-a4f7-a994a0c8755d",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "0a989024-7b76-40fb-af84-7a3439dea852",
               "event_type": "policy.action",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -395,28 +550,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "042ca38f-c7bd-4380-a3eb-16cb79679a9e",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "cb4ddac8-6d1b-4431-8f5d-117cd78e3dd6",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "d1444de9-5e3d-4571-a200-6f0f50ad5016",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "cb4f1152-03a7-47b2-ab95-84185ddf39b6",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "d1444de9-5e3d-4571-a200-6f0f50ad5016",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "d337a30e-0b17-4e1c-bc06-81094473d5c4",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "4efc4d102d81e2305fd914d9a1f667db04fbd764e080f9b0a9884b0869a9c757",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "6a4e7ed9-86be-40ff-8b8e-03cce737a83a",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
+            },
+            {
+              "event_id": "9a64b104-2d47-45c3-b397-e6817efd6657",
               "event_type": "policy.action",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -424,19 +615,29 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "b57cbe12-eeb8-444f-b268-7ae255ea8f90",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "5fa2c7f6-3cd1-485f-9516-28a793b2ca7f",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "63a55db3-18ac-49e4-86fd-2790394e0796",
+              "status": "ok",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "be27cf1e-809d-48f2-86f6-11881e561d16",
               "event_type": "fault.injected",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -445,10 +646,15 @@
                 "tool_name": "get_deployment",
                 "transient": false
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "63a55db3-18ac-49e4-86fd-2790394e0796",
+              "status": "error",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "d079d52e-3b58-48e0-804d-340cf48e3b31",
               "event_type": "tool.output.validation_failed",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -456,10 +662,15 @@
                 "source": "output_model",
                 "tool_name": "get_deployment"
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "63a55db3-18ac-49e4-86fd-2790394e0796",
+              "status": "error",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "53929c05-13a5-4cb4-844b-26f7354cff1b",
               "event_type": "tool.attempt.failed",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -467,17 +678,25 @@
                 "tool_name": "get_deployment",
                 "transient": false
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "63a55db3-18ac-49e4-86fd-2790394e0796",
+              "status": "error",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             },
             {
+              "event_id": "0de1edbd-bff8-4242-b50f-26fb7d2d45f4",
               "event_type": "run.failed",
+              "parent_span_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
               "payload": {
                 "code": "invalid_output"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "60406534-78b9-4339-aeba-ad80a7558d61",
+              "status": "error",
+              "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd"
             }
           ],
-          "trace_id": "37ad33ba-9685-45d0-8c3e-b9d6f6b8dc83",
+          "trace_id": "b5a177bd-83f8-48dd-8319-782628a93cdd",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -571,28 +790,56 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 39149800,
+          "latency_ns": 40325400,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "search_recent_logs"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 2,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "c0f6d9cb97fb1db16f619448038b1ec2cacf17c70a92b701600a7a1fe725dc55",
+              "action_payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Checkout degradation traced to the current deployment.",
+                "type": "finish"
+              },
               "action_step": 3,
               "kind": "finish",
               "tool_name": null
@@ -607,7 +854,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "7a146426-b0ed-4c4e-9e81-021288fa268b",
+          "run_id": "0749fbf2-7f5e-4b73-854b-0d1c7ea5240b",
           "scenario_id": "normal-success",
           "scenario_path": "normal-success.yaml",
           "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
@@ -616,17 +863,24 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "8f6e42b1231ab836222713597b8dfe8c1c3ad5f63b2b373dd1be71c46128abe9",
+          "trace_digest": "75a0309b029bf0a8fcc639d247b952307a5361bebd1e92a81ec1fea5d96d6d71",
           "trace_evidence": [
             {
+              "event_id": "cb5397e5-0354-438e-9456-e9a05bfff6f6",
               "event_type": "run.running",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "68ee3d0e-5187-4d06-8a4f-a3763f48de81",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "970fbd42-87fb-472d-a071-dbed4b6eb52b",
               "event_type": "policy.action",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -634,28 +888,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "4bef4e4b-b8f2-462b-97b5-e4f9f9d8f5a0",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "0727beab-024b-4d92-a5fe-2af23453b773",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "c56c5724-0a59-44d7-a5cc-bf434d7a3311",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "69687a1d-05ea-4f7c-93a6-ca39c9fd1a45",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "c56c5724-0a59-44d7-a5cc-bf434d7a3311",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "3df4aa8c-fffe-471f-9dcd-96e564d7d203",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "6290be524ee7e6124eae304271c348663672fbbcb32b13ccd6c45e43d84fb24b",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "e5bfea71-fae2-41fe-a903-0b00ad405eaa",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
+            },
+            {
+              "event_id": "af142572-02f5-4bc7-80a2-7a8b2f1cb764",
               "event_type": "policy.action",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -663,28 +953,68 @@
                 "tool_name": "search_recent_logs",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "3dcdb43c-1942-474f-82c8-a5d2befc6de7",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "34978dc6-6cb6-4d64-810a-437e7e378a3e",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "6763ea2e-6ac7-47cc-9d64-122b4f3072ae",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "e0d7a678-f963-42e7-b18a-fc09b75ca1ee",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
+                "output": {
+                  "entries": [
+                    {
+                      "level": "ERROR",
+                      "message": "checkout timeout contacting ledger"
+                    }
+                  ]
+                },
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "6763ea2e-6ac7-47cc-9d64-122b4f3072ae",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "7333238d-985e-40c4-97f4-00b604f627aa",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "5ec5aa763a39ac4c1629abfb46e3c9b5ed6006e997dc576bf20afd3c1a04b414",
+                "current_step": 2,
+                "output_digest": "45112e3d9ff043c3795d157767652406be9df268488c53f9aa2899f470c427d6"
+              },
+              "sequence": 9,
+              "span_id": "07620895-aa6a-4235-a3ea-f7529678c43f",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
+            },
+            {
+              "event_id": "e310a77c-7b20-4d7e-b424-9a06c6badb0e",
               "event_type": "policy.action",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 2,
                 "arguments": {},
@@ -692,28 +1022,64 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "1b3724c1-b1d0-42cb-9bf5-59a9934f11fc",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "849c934a-1c08-4972-9183-53851b368a9d",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 2,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "683d3e6c-616e-4321-95c0-1273783d9e21",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "bbac2232-5a11-45d6-9ff5-7ff4ccb634a5",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 2,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "version": "2026.09.04.1"
+                },
                 "tool_name": "get_deployment"
               },
-              "sequence": 12
+              "sequence": 12,
+              "span_id": "683d3e6c-616e-4321-95c0-1273783d9e21",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "94db5e89-828f-43a7-a419-1258a5ae8e52",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "aec5eb5fd0ef776ed3ecf05844f95d3353d90c657591ef2b6444f53e8678cc28",
+                "current_step": 3,
+                "output_digest": "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0"
+              },
+              "sequence": 13,
+              "span_id": "b8d07d55-4d23-491a-be88-a3cf0a9e344f",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
+            },
+            {
+              "event_id": "7b62a1f1-f4dd-49e9-94dc-6ae448c44aa5",
               "event_type": "policy.action",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "action_step": 3,
                 "evidence_refs": [
@@ -725,10 +1091,15 @@
                 "summary": "Checkout degradation traced to the current deployment.",
                 "type": "finish"
               },
-              "sequence": 14
+              "sequence": 14,
+              "span_id": "b4afb535-fb81-4c33-a257-9f26e5274ecf",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             },
             {
+              "event_id": "fb8ea975-e680-432e-ae39-b7817a05239b",
               "event_type": "run.succeeded",
+              "parent_span_id": "00470dda-0139-4f86-ac13-610a037183b1",
               "payload": {
                 "evidence_refs": [
                   "health",
@@ -738,10 +1109,13 @@
                 "outcome": "diagnosed",
                 "summary": "Checkout degradation traced to the current deployment."
               },
-              "sequence": 15
+              "sequence": 15,
+              "span_id": "2ff3a82d-5359-4e75-9076-bc226b364dea",
+              "status": "ok",
+              "trace_id": "00470dda-0139-4f86-ac13-610a037183b1"
             }
           ],
-          "trace_id": "ecc0fc8f-d50b-48cc-b420-1b2cf1a7b504",
+          "trace_id": "00470dda-0139-4f86-ac13-610a037183b1",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -771,16 +1145,30 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 14165000,
+          "latency_ns": 17118400,
           "logical_actions": [
             {
               "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+              "action_payload": {
+                "arguments": {
+                  "unsupported_filter": true
+                },
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "search_recent_logs"
             },
             {
               "action_fingerprint": "9c1c16f493b335e621f6c66e7bfa62674e29d75c80f3924d41b6ebef980ab6c9",
+              "action_payload": {
+                "evidence_refs": [],
+                "outcome": "diagnosed",
+                "summary": "This action is unreachable after input rejection.",
+                "type": "finish"
+              },
               "action_step": 1,
               "kind": "finish",
               "tool_name": null
@@ -795,7 +1183,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "f37964eb-794e-447a-bcd7-eab7d642fcf3",
+          "run_id": "c8675124-0b74-4fc9-ac6a-cb1bfbc04c0e",
           "scenario_id": "permanent-invalid-input",
           "scenario_path": "permanent-invalid-input.yaml",
           "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
@@ -804,17 +1192,24 @@
           "sequence_match_count": 1,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "8ea4662c0d7f5800bcc038c6621e7e6a717fa99dea14333d16603db7e3c93161",
+          "trace_digest": "73f44af4ff54fe2e18e8528123236263f41c775bede95a660357a06a0470aa1e",
           "trace_evidence": [
             {
+              "event_id": "f59c179c-ca9b-4e07-af02-3b3b148ab2ec",
               "event_type": "run.running",
+              "parent_span_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "67778aee-ba55-4ffd-921c-a9d9fd190c64",
+              "status": "ok",
+              "trace_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae"
             },
             {
+              "event_id": "017ecdd7-509d-40a4-a85c-caf0bb8ec262",
               "event_type": "policy.action",
+              "parent_span_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae",
               "payload": {
                 "action_step": 0,
                 "arguments": {
@@ -824,17 +1219,40 @@
                 "tool_name": "search_recent_logs",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "a9095bbf-70a4-45be-a75e-2fab76a0f2dd",
+              "status": "ok",
+              "trace_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae"
             },
             {
+              "event_id": "04ae72fb-f330-464c-8105-dc23ddf54b03",
+              "event_type": "tool.preflight.failed",
+              "parent_span_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae",
+              "payload": {
+                "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+                "action_step": 0,
+                "code": "invalid_input",
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 3,
+              "span_id": "f34e0388-287b-4a76-965d-266754039787",
+              "status": "error",
+              "trace_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae"
+            },
+            {
+              "event_id": "f57bcbcd-e89d-4e3f-9020-d8be507f45f5",
               "event_type": "run.failed",
+              "parent_span_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae",
               "payload": {
                 "code": "invalid_input"
               },
-              "sequence": 3
+              "sequence": 4,
+              "span_id": "f7bcb9a7-7fd2-4cd3-85ba-ed71ab330d93",
+              "status": "error",
+              "trace_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae"
             }
           ],
-          "trace_id": "098b2bdf-76d1-4b5c-b9b3-3f48b67263a0",
+          "trace_id": "3cbc7e49-ba34-4cc7-bdd4-e2204c8d37ae",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -899,22 +1317,43 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 26716400,
+          "latency_ns": 27436600,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "340772312d15db9d88aa3cddb1a37a535c148d915af155f597a51062ca2ba816",
+              "action_payload": {
+                "evidence_refs": [
+                  "health",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Deployment evidence was collected after rate limiting cleared.",
+                "type": "finish"
+              },
               "action_step": 2,
               "kind": "finish",
               "tool_name": null
@@ -936,7 +1375,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "512815bf-76c2-404b-a0f5-e1372a53db44",
+          "run_id": "bb2ea5b2-c8e0-4bee-a97d-8446eafb0cae",
           "scenario_id": "rate-limit-recovery",
           "scenario_path": "rate-limit-recovery.yaml",
           "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
@@ -945,17 +1384,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "e1b58d7f051660253a756596b27d6be86d1ced16474be0f4f29916f8642db95c",
+          "trace_digest": "a2225c387d3a6c71f9b5e6955dae02637c2e18b826cd1055af23eac9000cd7f6",
           "trace_evidence": [
             {
+              "event_id": "0b99aabe-211b-41b9-97ce-1a8bd6e1eabb",
               "event_type": "run.running",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "45de14cf-95f8-4078-ba81-980ad6953485",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "c736a975-3287-44a0-afd4-7f215e3a4b43",
               "event_type": "policy.action",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -963,28 +1409,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "c5d85857-b3ec-4e3e-a5c3-0ae8f5806d65",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "4c313691-05b7-4f57-bb04-29b31f78a2e2",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "67b8b489-f259-4929-b75d-792d3fcb044f",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "086547cb-9839-4b9a-bd15-eaa626e14f92",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "67b8b489-f259-4929-b75d-792d3fcb044f",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "297c1bcc-7157-45ab-acf1-b61e4848c1c8",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "cfd0fd4c5f885380bd0f65b733f2ed07a33b9ae7dc58aa3ac5857827854c6df9",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "38bb8ed8-9145-4258-94c2-0ad1a66c9a78",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
+            },
+            {
+              "event_id": "64457355-1fbd-4858-9499-23446c6ab36f",
               "event_type": "policy.action",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -992,19 +1474,29 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "8fad07b2-3b26-48e5-b60f-351814d161db",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "bb10bf04-5f83-4311-9477-d1a6a89c364b",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "330e2da0-19ec-4488-8571-271ca0b34eaf",
+              "status": "ok",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "6eace4f6-0159-4f9b-a694-2f97a1d16a50",
               "event_type": "fault.injected",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1013,10 +1505,15 @@
                 "tool_name": "get_deployment",
                 "transient": true
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "330e2da0-19ec-4488-8571-271ca0b34eaf",
+              "status": "error",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "19339cbb-9fbf-4ac5-8714-4188925c3097",
               "event_type": "tool.attempt.failed",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1024,17 +1521,25 @@
                 "tool_name": "get_deployment",
                 "transient": true
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "330e2da0-19ec-4488-8571-271ca0b34eaf",
+              "status": "error",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             },
             {
+              "event_id": "9fff5f42-f058-412d-aa02-ddfd3a3daf01",
               "event_type": "run.failed",
+              "parent_span_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
               "payload": {
                 "code": "rate_limit"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "3db21ac1-11d9-4672-88cc-d24ea31bf636",
+              "status": "error",
+              "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c"
             }
           ],
-          "trace_id": "b765f769-7583-4ba3-b994-f86948621b40",
+          "trace_id": "fdc40153-404e-40c6-af5e-23d0f032110c",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -1100,28 +1605,56 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 29213200,
+          "latency_ns": 26771100,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "search_recent_logs"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 2,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "800424d7a8153f75e814cd5a0c02e15a3bfa3a12cb85fb8ce343d7e70653048a",
+              "action_payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Investigation recovered after the transient timeout.",
+                "type": "finish"
+              },
               "action_step": 3,
               "kind": "finish",
               "tool_name": null
@@ -1143,7 +1676,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "62126f56-ef0c-4058-a844-214869506814",
+          "run_id": "d4e21fdb-3d08-4675-a0e4-7a87afbe8a5e",
           "scenario_id": "timeout-recovery",
           "scenario_path": "timeout-recovery.yaml",
           "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
@@ -1152,17 +1685,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "e7d1329c7ac4088c17f6828665fad467fbdb04b966ce2286f2c652702701d51b",
+          "trace_digest": "64018f2a67ca880b4312ac6c868a3d1ee048c87f49007f23ce3d2e6e960bbc90",
           "trace_evidence": [
             {
+              "event_id": "b61bcaa8-c2a9-4c7c-a3f5-912d47e94300",
               "event_type": "run.running",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "b310360c-0736-43a7-9e21-f4c5c114b220",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "b8ea6dd6-d836-4e5c-8a55-75ef70273b22",
               "event_type": "policy.action",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -1170,28 +1710,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "4a563b5a-96dc-4b31-abff-ae3a3372bc9f",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "3e2a576a-dff0-4a80-91e5-285f891c2e0e",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "b9a21fed-b9e6-4dae-a64e-55d9f8a6f8ac",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "711add0b-010a-4128-b809-8e6c9727abe6",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "b9a21fed-b9e6-4dae-a64e-55d9f8a6f8ac",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "f31d7fc0-a710-47f9-820c-70cd835cca82",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "66faf6c1d9a99f27942a9f28f286dae9af7a83008f1f3a5215192f7261b2c02f",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "a38e5188-f031-4f03-8ed7-eeb78b9701e9",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
+            },
+            {
+              "event_id": "d8b9f4fe-509e-4fbb-b578-8829bb3507ca",
               "event_type": "policy.action",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -1199,19 +1775,29 @@
                 "tool_name": "search_recent_logs",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "76b4e829-875a-4133-bff8-dbd8b4350e36",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "2173aa82-ca1c-456a-844a-36b7fa454cf3",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "1f417e5a-2cd8-41aa-8976-419d235a72d6",
+              "status": "ok",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "cafefb1d-a4e6-44e3-8432-19eaf2fb4150",
               "event_type": "fault.injected",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1220,10 +1806,15 @@
                 "tool_name": "search_recent_logs",
                 "transient": true
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "1f417e5a-2cd8-41aa-8976-419d235a72d6",
+              "status": "error",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "3c757859-4390-403e-a9fd-cc8b8a580a93",
               "event_type": "tool.attempt.failed",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1231,17 +1822,25 @@
                 "tool_name": "search_recent_logs",
                 "transient": true
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "1f417e5a-2cd8-41aa-8976-419d235a72d6",
+              "status": "error",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             },
             {
+              "event_id": "78fbff29-5284-4b2b-ba57-bff3183d0a75",
               "event_type": "run.failed",
+              "parent_span_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
               "payload": {
                 "code": "tool_timeout"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "00649dc8-e905-4541-bc08-32493db55688",
+              "status": "error",
+              "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427"
             }
           ],
-          "trace_id": "a9b0181b-2764-49a2-954a-107fba6ff405",
+          "trace_id": "b71921d8-48a1-4f57-868d-4b294b2d6427",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -1259,8 +1858,8 @@
         "invalid_output_rate": 0.0,
         "invalid_output_rejected_count": 1,
         "malformed_fault_injected_count": 1,
-        "p50_latency_ms": 28.2775,
-        "p95_latency_ms": 66.2267,
+        "p50_latency_ms": 27.4366,
+        "p95_latency_ms": 67.8469,
         "recovered_transient_fault_count": 0,
         "recovery_rate": 0.0,
         "retry_attempt_count": 0,
@@ -1341,22 +1940,45 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 57983300,
+          "latency_ns": 59096200,
           "logical_actions": [
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+              "action_payload": {
+                "arguments": {
+                  "deployment_id": "deploy-2026-09-04-001"
+                },
+                "idempotency_key": "approval-reconstruction-v1",
+                "tool_name": "prepare_rollback",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "prepare_rollback"
             },
             {
               "action_fingerprint": "2c8ad720fe0e5f32e5e835403f4ec33458738872abfed4642c58cca29f7e90a2",
+              "action_payload": {
+                "evidence_refs": [
+                  "deployment",
+                  "approval"
+                ],
+                "outcome": "prepared",
+                "summary": "Rollback was prepared after durable approval reconstruction.",
+                "type": "finish"
+              },
               "action_step": 2,
               "kind": "finish",
               "tool_name": null
@@ -1371,7 +1993,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "7c0bdfa7-5a32-42ba-909a-7eab48085d47",
+          "run_id": "124d8246-a6d2-4109-9262-4aad772b817e",
           "scenario_id": "approval-reconstruction",
           "scenario_path": "approval-reconstruction.yaml",
           "scenario_sha256": "e2e30e3b4a9e81f021a9136ae4b047e7e6c8e830c7b29deb27b2e197f7ca55ef",
@@ -1380,17 +2002,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "3bdedaf98bffcaa295b89f221ca230f2bae9dba061b8fd959433693066fed720",
+          "trace_digest": "821771fa680eea010476bf77a0fe7d91df08939d417d366f858a366cd52bd9b3",
           "trace_evidence": [
             {
+              "event_id": "cc02e7a3-170f-4f58-9dc0-4890d19f7a92",
               "event_type": "run.running",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "41e9e887-aa3a-475b-9f0b-ec362102677f",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "2b10392b-a728-4094-a1e7-1f9f127bc31a",
               "event_type": "policy.action",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -1398,28 +2027,64 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "ea118d95-0ee2-46f1-97f5-89a8d92b04c0",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "becb10a1-e607-470e-9e80-15e420c1a2c7",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "138d0d0d-a12c-47c4-af4b-82a5c33065c2",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "a3f195d5-5e2d-4600-8a8a-6312013634eb",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "version": "2026.09.04.1"
+                },
                 "tool_name": "get_deployment"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "138d0d0d-a12c-47c4-af4b-82a5c33065c2",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "e2d23b2e-3949-4293-9f40-505108c1e82f",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "548cc7b3a4d9bf39c66acfe6e4f931cad92d4db6a26833767d99eab9903f8e72",
+                "current_step": 1,
+                "output_digest": "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0"
+              },
+              "sequence": 5,
+              "span_id": "da381672-8d50-4877-99aa-05ee31d99682",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
+            },
+            {
+              "event_id": "e67340e5-153a-4763-bc3c-e02f8603184b",
               "event_type": "policy.action",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 1,
                 "arguments": {
@@ -1429,36 +2094,56 @@
                 "tool_name": "prepare_rollback",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "1458029d-b354-4281-b426-12a14ce195cd",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "e6e0d58b-7e75-4fe7-a2bf-90dc513641e9",
               "event_type": "run.waiting_approval",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
                 "step": 1,
                 "tool_name": "prepare_rollback"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "dd178da2-fc57-4664-8fb1-bfc4a26991ad",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "2a57c0ac-24ba-4e58-8be8-54c27a63c4fe",
               "event_type": "approval.recorded",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
                 "action_step": 1,
                 "actor": "evaluation-reviewer",
                 "allow": true
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "9cea222f-7021-462a-838d-913b795b4bda",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "5e39284d-932d-43bf-a13f-72d81bf46c67",
               "event_type": "run.running",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "from_status": "waiting_approval"
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "12436846-e2df-4891-8246-183ac645f565",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "31dce524-eab0-49bb-9e48-68c98ece7622",
               "event_type": "policy.action",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 1,
                 "arguments": {
@@ -1468,28 +2153,64 @@
                 "tool_name": "prepare_rollback",
                 "type": "call_tool"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "6009109b-9193-4ea3-87cb-bb87f09355b3",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "a00cdce2-717f-437d-ae77-7d1e1561a531",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "prepare_rollback"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "6f637163-69b1-49e3-aec8-ff927981bff3",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "4a7639ed-4ea2-49d1-8c3a-b37aa3baf136",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "prepared": true
+                },
                 "tool_name": "prepare_rollback"
               },
-              "sequence": 12
+              "sequence": 12,
+              "span_id": "6f637163-69b1-49e3-aec8-ff927981bff3",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "3cec0859-43a5-4626-8277-1675b79deda1",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "9d058fe055c68c5f1ed69a359bb34acd25d26291cab8abcc8578a2beaca2ce81",
+                "current_step": 2,
+                "output_digest": "7d9048a9281571ca6006fcd75510999698c89a37cc7ad9fd38be050b86f8fdef"
+              },
+              "sequence": 13,
+              "span_id": "32003f00-7a24-42b3-8e8d-7f75914cd6b4",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
+            },
+            {
+              "event_id": "6817e5cf-5de3-40d7-a34f-b844978a5cbc",
               "event_type": "policy.action",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "action_step": 2,
                 "evidence_refs": [
@@ -1500,10 +2221,15 @@
                 "summary": "Rollback was prepared after durable approval reconstruction.",
                 "type": "finish"
               },
-              "sequence": 14
+              "sequence": 14,
+              "span_id": "1c3d7153-b1fd-4b6d-8f85-8257d90c33f6",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             },
             {
+              "event_id": "de9e01bb-5179-4b29-9cad-947e8c083665",
               "event_type": "run.succeeded",
+              "parent_span_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
               "payload": {
                 "evidence_refs": [
                   "deployment",
@@ -1512,10 +2238,13 @@
                 "outcome": "prepared",
                 "summary": "Rollback was prepared after durable approval reconstruction."
               },
-              "sequence": 15
+              "sequence": 15,
+              "span_id": "37ddf7f8-c2d5-4d2f-a7fa-1784f26a676d",
+              "status": "ok",
+              "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b"
             }
           ],
-          "trace_id": "0d096650-77b6-49aa-ac50-8812b2846322",
+          "trace_id": "5827f1ef-7182-474b-a5a5-fc11d693329b",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 1
@@ -1580,22 +2309,40 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 1,
           "invalid_output_rejected_count": 1,
-          "latency_ns": 30711600,
+          "latency_ns": 28660800,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "6d9426e8b02fd84b7c002b99a55c60509c8168427ad92a9271852ad2c76af4b5",
+              "action_payload": {
+                "evidence_refs": [],
+                "outcome": "diagnosed",
+                "summary": "This action is unreachable after safe schema rejection.",
+                "type": "finish"
+              },
               "action_step": 2,
               "kind": "finish",
               "tool_name": null
@@ -1625,7 +2372,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "d80abbd6-a39a-4907-bb3c-ac0c65e6f748",
+          "run_id": "89740959-c9bc-419d-851a-46122c20e377",
           "scenario_id": "malformed-output-rejected",
           "scenario_path": "malformed-output-rejected.yaml",
           "scenario_sha256": "8341aa5d37ea246b97fe8555f1a1686e965c840f59c6a0f3f8d6f64c5728dbb5",
@@ -1634,17 +2381,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "116268d68b3ff28a8a99fff524e35aac52e2cf47fc5f26e4f755c05c5f15abb8",
+          "trace_digest": "f0f9e41ee58bb408767a60c9f016fabad0c5d7146fbb26031c2316d6523fe8ed",
           "trace_evidence": [
             {
+              "event_id": "7fc27609-b064-4d17-8aba-ce2a3b0cdc25",
               "event_type": "run.running",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "32302264-fe6d-4473-8044-cb673536052c",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "aa77ce86-fc43-41a3-b354-b508df19e9b8",
               "event_type": "policy.action",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -1652,28 +2406,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "2199cda6-28a9-4fd0-b85b-67dc5fdb8216",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "355b1b0e-85fe-4b50-8657-a400b6a7eda7",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "30ecb121-3b63-4661-91b3-73f53ec4e731",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "2e738063-9cf6-4735-aef2-c06e5e62952a",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "30ecb121-3b63-4661-91b3-73f53ec4e731",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "61082d4d-7718-4969-8ce4-16b46d12e718",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "4efc4d102d81e2305fd914d9a1f667db04fbd764e080f9b0a9884b0869a9c757",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "8b95ba91-1f1d-4432-9ce5-14e9a458fcb8",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
+            },
+            {
+              "event_id": "ff002695-ed78-4a97-bc72-121cdbebeab1",
               "event_type": "policy.action",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -1681,19 +2471,29 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "2671de3d-600d-47aa-9814-d9240f996225",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "133d76bc-5106-4c58-bd6c-563e098f3ca7",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "f5c35671-5f77-43d8-804e-215d9ff5bbe7",
+              "status": "ok",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "2e9982c4-bb0a-49c4-86c5-ed6ce10df8e9",
               "event_type": "fault.injected",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1702,10 +2502,15 @@
                 "tool_name": "get_deployment",
                 "transient": false
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "f5c35671-5f77-43d8-804e-215d9ff5bbe7",
+              "status": "error",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "2fd43575-f72e-4d67-86f6-2b7d24310dcc",
               "event_type": "tool.output.validation_failed",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1713,10 +2518,15 @@
                 "source": "output_model",
                 "tool_name": "get_deployment"
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "f5c35671-5f77-43d8-804e-215d9ff5bbe7",
+              "status": "error",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "4f7290b5-bc14-4b36-9bff-025c9e986795",
               "event_type": "tool.attempt.failed",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -1724,17 +2534,25 @@
                 "tool_name": "get_deployment",
                 "transient": false
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "f5c35671-5f77-43d8-804e-215d9ff5bbe7",
+              "status": "error",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             },
             {
+              "event_id": "ed94ac1c-38d9-4b9d-884b-bc2c1a28882e",
               "event_type": "run.failed",
+              "parent_span_id": "641f4ead-2e48-42fa-afcc-83e362819354",
               "payload": {
                 "code": "invalid_output"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "c3e2a8dc-f466-424e-952a-d817e43344e2",
+              "status": "error",
+              "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354"
             }
           ],
-          "trace_id": "ff391abb-911d-47b4-b51a-9ed7648a15fb",
+          "trace_id": "641f4ead-2e48-42fa-afcc-83e362819354",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -1828,28 +2646,56 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 38295100,
+          "latency_ns": 38141200,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "search_recent_logs"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 2,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "c0f6d9cb97fb1db16f619448038b1ec2cacf17c70a92b701600a7a1fe725dc55",
+              "action_payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Checkout degradation traced to the current deployment.",
+                "type": "finish"
+              },
               "action_step": 3,
               "kind": "finish",
               "tool_name": null
@@ -1864,7 +2710,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "2361a3a4-db94-4d2c-8cb0-d6431c54a2cc",
+          "run_id": "22d2c245-d4d8-4e0b-ab68-1b56e5076623",
           "scenario_id": "normal-success",
           "scenario_path": "normal-success.yaml",
           "scenario_sha256": "260b5a9f7ef890684026f57fd9c1cb90f67ee512f5485f14dcfa61e35174c396",
@@ -1873,17 +2719,24 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "8f6e42b1231ab836222713597b8dfe8c1c3ad5f63b2b373dd1be71c46128abe9",
+          "trace_digest": "c0db748a870546e0a9a274277c28139ce56d3352e6d39bc00b0f41c6a4a29137",
           "trace_evidence": [
             {
+              "event_id": "75466335-ebab-4497-9c64-a20ffaa50a37",
               "event_type": "run.running",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "508b41f8-a5df-4a36-b281-d278bb461dc2",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "b17e0877-8126-462e-aad3-ca364ed5f7c7",
               "event_type": "policy.action",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -1891,28 +2744,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "9f7bbbe1-99f1-4a68-b3b9-48c4e683f709",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "bb219d61-65aa-4f3c-894e-d115bca3c749",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "5c16b565-43df-46a5-bcea-c02dd5baad51",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "a7cb4479-ebde-4073-b5a3-3a51f2b4ce4e",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "5c16b565-43df-46a5-bcea-c02dd5baad51",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "e06ff2cc-3270-4a7c-a468-f186d5488f87",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "6290be524ee7e6124eae304271c348663672fbbcb32b13ccd6c45e43d84fb24b",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "1ca840c0-3d75-4cc9-8f2d-f98eb1a524ed",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
+            },
+            {
+              "event_id": "a6cffbf0-4f5f-4e51-8e2a-09fec46a72d2",
               "event_type": "policy.action",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -1920,28 +2809,68 @@
                 "tool_name": "search_recent_logs",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "41f3b45f-5979-43fe-b33e-d485daaafd9b",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "226c8d05-c2f4-401d-ad98-ff606707ec37",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "facc0005-51fc-481b-8c21-186f5dd28924",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "5958e091-6abe-4014-9444-970b1b042ffe",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
+                "output": {
+                  "entries": [
+                    {
+                      "level": "ERROR",
+                      "message": "checkout timeout contacting ledger"
+                    }
+                  ]
+                },
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "facc0005-51fc-481b-8c21-186f5dd28924",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "fb6a4aff-b108-4e0c-a721-8340adee679f",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
+              "payload": {
+                "action_step": 1,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "5ec5aa763a39ac4c1629abfb46e3c9b5ed6006e997dc576bf20afd3c1a04b414",
+                "current_step": 2,
+                "output_digest": "45112e3d9ff043c3795d157767652406be9df268488c53f9aa2899f470c427d6"
+              },
+              "sequence": 9,
+              "span_id": "6c0b9965-0841-42b4-bc4f-2b0272957601",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
+            },
+            {
+              "event_id": "b89e232c-62ec-4150-8dff-d07b9e8ef983",
               "event_type": "policy.action",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 2,
                 "arguments": {},
@@ -1949,28 +2878,64 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "dc0fd6a0-aea9-4e8f-9e53-384609e5c1d4",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "0a6af900-fcc5-4b0d-ad9f-2594f895b60b",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 2,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "bfc72bbf-d427-4b00-b690-9b045ee55335",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "ec844d42-0a7f-4849-a77a-f3c713574214",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 2,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "version": "2026.09.04.1"
+                },
                 "tool_name": "get_deployment"
               },
-              "sequence": 12
+              "sequence": 12,
+              "span_id": "bfc72bbf-d427-4b00-b690-9b045ee55335",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "86db1f6c-46fa-40a2-906d-3c6dedb6550b",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "aec5eb5fd0ef776ed3ecf05844f95d3353d90c657591ef2b6444f53e8678cc28",
+                "current_step": 3,
+                "output_digest": "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0"
+              },
+              "sequence": 13,
+              "span_id": "0cd2e0e7-06a3-499a-a4c2-2d6c34d9855a",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
+            },
+            {
+              "event_id": "cc03146f-20ca-4f1c-9d31-5226d0eb49ac",
               "event_type": "policy.action",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "action_step": 3,
                 "evidence_refs": [
@@ -1982,10 +2947,15 @@
                 "summary": "Checkout degradation traced to the current deployment.",
                 "type": "finish"
               },
-              "sequence": 14
+              "sequence": 14,
+              "span_id": "eeb76dde-1ad9-423d-ad76-4794149e76c4",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             },
             {
+              "event_id": "82a76fa1-d9c5-409d-9039-38947631844a",
               "event_type": "run.succeeded",
+              "parent_span_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
               "payload": {
                 "evidence_refs": [
                   "health",
@@ -1995,10 +2965,13 @@
                 "outcome": "diagnosed",
                 "summary": "Checkout degradation traced to the current deployment."
               },
-              "sequence": 15
+              "sequence": 15,
+              "span_id": "65f3240b-9ff0-4597-b46c-ad7d85dc0e4b",
+              "status": "ok",
+              "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9"
             }
           ],
-          "trace_id": "dd6f757a-9692-4ce9-9e1d-a2075744c72f",
+          "trace_id": "f2ef3580-4f34-4d2a-bcb3-000dd39c4ee9",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -2028,16 +3001,30 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 14604900,
+          "latency_ns": 16613300,
           "logical_actions": [
             {
               "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+              "action_payload": {
+                "arguments": {
+                  "unsupported_filter": true
+                },
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "search_recent_logs"
             },
             {
               "action_fingerprint": "9c1c16f493b335e621f6c66e7bfa62674e29d75c80f3924d41b6ebef980ab6c9",
+              "action_payload": {
+                "evidence_refs": [],
+                "outcome": "diagnosed",
+                "summary": "This action is unreachable after input rejection.",
+                "type": "finish"
+              },
               "action_step": 1,
               "kind": "finish",
               "tool_name": null
@@ -2052,7 +3039,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 0,
           "retry_attempt_count": 0,
-          "run_id": "7df55dfd-1dee-42e8-b6f7-0cc5454bcde1",
+          "run_id": "068cf3b1-149d-4023-b7d7-baaa79bffc18",
           "scenario_id": "permanent-invalid-input",
           "scenario_path": "permanent-invalid-input.yaml",
           "scenario_sha256": "6217d9a81dcae56a42b51a498c0acceecebec92392d53e28fa3d768d86f738d6",
@@ -2061,17 +3048,24 @@
           "sequence_match_count": 1,
           "store_run_count": 1,
           "terminal_success": false,
-          "trace_digest": "8ea4662c0d7f5800bcc038c6621e7e6a717fa99dea14333d16603db7e3c93161",
+          "trace_digest": "2c76a437dc2d7d5aeeef6a9c4917b96231a2d3b02c8bfbfa2cdaa58e5b924f5e",
           "trace_evidence": [
             {
+              "event_id": "7748641a-9c93-4012-b5cb-7a7865c3f9ba",
               "event_type": "run.running",
+              "parent_span_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "180e8a7a-147a-4153-bb29-f48034fc877c",
+              "status": "ok",
+              "trace_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b"
             },
             {
+              "event_id": "26c2d642-75d8-47c4-9b3e-a02595a6bd26",
               "event_type": "policy.action",
+              "parent_span_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b",
               "payload": {
                 "action_step": 0,
                 "arguments": {
@@ -2081,17 +3075,40 @@
                 "tool_name": "search_recent_logs",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "916b65f1-be0c-4828-8bb8-d21ffa8d7837",
+              "status": "ok",
+              "trace_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b"
             },
             {
+              "event_id": "06801030-0bcb-4129-b1b4-1beb0481f4b8",
+              "event_type": "tool.preflight.failed",
+              "parent_span_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b",
+              "payload": {
+                "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+                "action_step": 0,
+                "code": "invalid_input",
+                "tool_name": "search_recent_logs"
+              },
+              "sequence": 3,
+              "span_id": "994078e9-e506-4774-955b-b4162a266a41",
+              "status": "error",
+              "trace_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b"
+            },
+            {
+              "event_id": "b0a92014-d2df-4240-a860-897b48bf6e47",
               "event_type": "run.failed",
+              "parent_span_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b",
               "payload": {
                 "code": "invalid_input"
               },
-              "sequence": 3
+              "sequence": 4,
+              "span_id": "34dab4f4-db60-4f10-b323-cd7ad1cf6767",
+              "status": "error",
+              "trace_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b"
             }
           ],
-          "trace_id": "b9632486-c56c-47d4-ad78-18805db8d629",
+          "trace_id": "423c1f2b-6de7-4a55-bfc0-c88d265b177b",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 0,
           "write_execution_count": 0
@@ -2177,22 +3194,43 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 34428300,
+          "latency_ns": 34972400,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "340772312d15db9d88aa3cddb1a37a535c148d915af155f597a51062ca2ba816",
+              "action_payload": {
+                "evidence_refs": [
+                  "health",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Deployment evidence was collected after rate limiting cleared.",
+                "type": "finish"
+              },
               "action_step": 2,
               "kind": "finish",
               "tool_name": null
@@ -2214,7 +3252,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 1,
           "retry_attempt_count": 1,
-          "run_id": "c9398436-5be0-4967-8df7-f25d0f47cf17",
+          "run_id": "d8350876-8bc4-4c2f-a613-5c767d83293f",
           "scenario_id": "rate-limit-recovery",
           "scenario_path": "rate-limit-recovery.yaml",
           "scenario_sha256": "953e03c61f8ffae6314b697be3043cf992c7064c3e803527dc2c22ead59fb2cb",
@@ -2223,17 +3261,24 @@
           "sequence_match_count": 2,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "9ac97c6cfd1dac411d711d80bfd8078cb196bba7103687a091bef73a6454f93b",
+          "trace_digest": "7dcbc9712513bd944e6404d3f7883356abfd6a8364706d3f0c227a602ce434e7",
           "trace_evidence": [
             {
+              "event_id": "69d3fde1-9e7e-458e-9b88-3a6cbb982e39",
               "event_type": "run.running",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "419d1850-883f-43a6-ade5-d8238e809947",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "21eb46b0-3906-41fd-b3da-3df0929457f9",
               "event_type": "policy.action",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -2241,28 +3286,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "05de18eb-3550-462b-9d76-3b5650f51c5b",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "82bdbcaa-0596-4efa-91af-5f4f2d1a8e97",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "345befbd-ebf2-42dd-9122-a78683229bcc",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "bf1d67e0-2a27-4e81-82c1-6a5b0f06cc86",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "345befbd-ebf2-42dd-9122-a78683229bcc",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "77f0c562-7c37-4b74-b92d-18de424e88f6",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "cfd0fd4c5f885380bd0f65b733f2ed07a33b9ae7dc58aa3ac5857827854c6df9",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "2f1fc6fa-fafa-4dcb-a3bd-81e90e5f716b",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
+            },
+            {
+              "event_id": "9d595f48-9741-446f-b376-9efebdfa769a",
               "event_type": "policy.action",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -2270,19 +3351,29 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "ac525fdd-a818-4975-9e9a-d37313f5485e",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "e07fe68f-7a24-4448-af68-416035d4d56c",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "1167b289-aaba-4eb4-b459-7eee5b6322b3",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "7db486f5-f89b-4207-bb23-a2b7b31f80f8",
               "event_type": "fault.injected",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -2291,10 +3382,15 @@
                 "tool_name": "get_deployment",
                 "transient": true
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "1167b289-aaba-4eb4-b459-7eee5b6322b3",
+              "status": "error",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "85c31fc2-0ffc-4a56-91df-a5453b865305",
               "event_type": "tool.attempt.failed",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -2303,28 +3399,64 @@
                 "tool_name": "get_deployment",
                 "transient": true
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "1167b289-aaba-4eb4-b459-7eee5b6322b3",
+              "status": "error",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "44e41ced-4179-4176-9efa-ffbdcb181a4a",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 1,
                 "attempt": 2,
                 "tool_name": "get_deployment"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "a38c33f9-c515-48df-8692-39fc022367c7",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "f900eff0-716c-40c0-bf18-187d91117031",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 1,
                 "attempt": 2,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "version": "2026.09.04.1"
+                },
                 "tool_name": "get_deployment"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "a38c33f9-c515-48df-8692-39fc022367c7",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "143e0207-86e4-4210-ad0a-623eba341e87",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
+              "payload": {
+                "action_step": 1,
+                "attempt": 2,
+                "cached": false,
+                "context_digest": "2e05af61a2733057a8a056ffcec5fb31fdfeddd500a62897bb7d51817d412da5",
+                "current_step": 2,
+                "output_digest": "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0"
+              },
+              "sequence": 12,
+              "span_id": "559b0be9-ae39-4e0d-a773-1eceb006bf63",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
+            },
+            {
+              "event_id": "552a906a-4d44-4c9b-b8ef-476a27beac1f",
               "event_type": "policy.action",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "action_step": 2,
                 "evidence_refs": [
@@ -2335,10 +3467,15 @@
                 "summary": "Deployment evidence was collected after rate limiting cleared.",
                 "type": "finish"
               },
-              "sequence": 13
+              "sequence": 13,
+              "span_id": "75c27667-444e-44d2-988c-46e0969417b5",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             },
             {
+              "event_id": "ea2674d0-b3f5-4358-8cf3-f4658a53d3dc",
               "event_type": "run.succeeded",
+              "parent_span_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
               "payload": {
                 "evidence_refs": [
                   "health",
@@ -2347,10 +3484,13 @@
                 "outcome": "diagnosed",
                 "summary": "Deployment evidence was collected after rate limiting cleared."
               },
-              "sequence": 14
+              "sequence": 14,
+              "span_id": "3125b069-75cc-4054-a717-d544bb3b0a64",
+              "status": "ok",
+              "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e"
             }
           ],
-          "trace_id": "ea3691d9-15c8-433f-bf84-078e446ba42c",
+          "trace_id": "f3d962ee-413d-4f03-b3ca-53b09984850e",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -2459,28 +3599,56 @@
           "invalid_output_accepted_count": 0,
           "invalid_output_detected_count": 0,
           "invalid_output_rejected_count": 0,
-          "latency_ns": 42475000,
+          "latency_ns": 46099200,
           "logical_actions": [
             {
               "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_service_health",
+                "type": "call_tool"
+              },
               "action_step": 0,
               "kind": "call_tool",
               "tool_name": "get_service_health"
             },
             {
               "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "search_recent_logs",
+                "type": "call_tool"
+              },
               "action_step": 1,
               "kind": "call_tool",
               "tool_name": "search_recent_logs"
             },
             {
               "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+              "action_payload": {
+                "arguments": {},
+                "idempotency_key": null,
+                "tool_name": "get_deployment",
+                "type": "call_tool"
+              },
               "action_step": 2,
               "kind": "call_tool",
               "tool_name": "get_deployment"
             },
             {
               "action_fingerprint": "800424d7a8153f75e814cd5a0c02e15a3bfa3a12cb85fb8ce343d7e70653048a",
+              "action_payload": {
+                "evidence_refs": [
+                  "health",
+                  "logs",
+                  "deployment"
+                ],
+                "outcome": "diagnosed",
+                "summary": "Investigation recovered after the transient timeout.",
+                "type": "finish"
+              },
               "action_step": 3,
               "kind": "finish",
               "tool_name": null
@@ -2502,7 +3670,7 @@
           "pre_pause_write_execution_count": 0,
           "recovered_transient_fault_count": 1,
           "retry_attempt_count": 1,
-          "run_id": "f39bce38-fe97-4dc7-926c-84403d8285d8",
+          "run_id": "6d9ebb7c-293c-4804-8100-141c58710209",
           "scenario_id": "timeout-recovery",
           "scenario_path": "timeout-recovery.yaml",
           "scenario_sha256": "11bcca099be45eca0de6497a6cb9c584e62f36cf2ebad7183de60331c6722fd1",
@@ -2511,17 +3679,24 @@
           "sequence_match_count": 3,
           "store_run_count": 1,
           "terminal_success": true,
-          "trace_digest": "5ccebb19759f53ef9612e2644aa4c5a1489588eb14d088bdf44bf556f78d6a3e",
+          "trace_digest": "8f0fe8fb150e5a143aacc5492756dbce766ea6047d5311401870172cd2dbdd15",
           "trace_evidence": [
             {
+              "event_id": "de29c097-8411-4170-9ed5-bd048dd72be5",
               "event_type": "run.running",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "from_status": "queued"
               },
-              "sequence": 1
+              "sequence": 1,
+              "span_id": "0f7dc72c-3e6f-4dad-b36f-7f86f7ec9481",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "c305428d-b013-4536-93ab-fc91686b20b9",
               "event_type": "policy.action",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 0,
                 "arguments": {},
@@ -2529,28 +3704,64 @@
                 "tool_name": "get_service_health",
                 "type": "call_tool"
               },
-              "sequence": 2
+              "sequence": 2,
+              "span_id": "74b59a84-c7a2-4935-b484-207a5c383cad",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "368e9e0f-3346-4799-ad65-1aff9c8b95f4",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
                 "tool_name": "get_service_health"
               },
-              "sequence": 3
+              "sequence": 3,
+              "span_id": "d3c5a55a-3576-483b-9468-dcbe5b706e19",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "97699c69-db0a-4aaf-9a23-9180f703a3d8",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 0,
                 "attempt": 1,
+                "output": {
+                  "service": "checkout",
+                  "status": "degraded"
+                },
                 "tool_name": "get_service_health"
               },
-              "sequence": 4
+              "sequence": 4,
+              "span_id": "d3c5a55a-3576-483b-9468-dcbe5b706e19",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "26e76937-0719-4c91-a420-3188187b0833",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
+              "payload": {
+                "action_step": 0,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "66faf6c1d9a99f27942a9f28f286dae9af7a83008f1f3a5215192f7261b2c02f",
+                "current_step": 1,
+                "output_digest": "b284518106c60f9577960d15f3d26e273c08ad0c044a39d55dbad974184c9554"
+              },
+              "sequence": 5,
+              "span_id": "d7941c54-2fed-4d96-93c5-6a04f21cf645",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
+            },
+            {
+              "event_id": "bec34bc1-015a-4c4d-836e-e7673633fe43",
               "event_type": "policy.action",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 1,
                 "arguments": {},
@@ -2558,19 +3769,29 @@
                 "tool_name": "search_recent_logs",
                 "type": "call_tool"
               },
-              "sequence": 6
+              "sequence": 6,
+              "span_id": "de8e7628-9ff3-41ef-868e-818a62f9b323",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "59365fe1-6aaf-4b9f-ac6f-4d9fd5ce9d6b",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 7
+              "sequence": 7,
+              "span_id": "6e584c91-6cd9-493b-adf0-4b5c6b9ac1d3",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "e6f4ae6e-9dd5-4ea4-a261-6c70cf13b2de",
               "event_type": "fault.injected",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -2579,10 +3800,15 @@
                 "tool_name": "search_recent_logs",
                 "transient": true
               },
-              "sequence": 8
+              "sequence": 8,
+              "span_id": "6e584c91-6cd9-493b-adf0-4b5c6b9ac1d3",
+              "status": "error",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "0a57aea8-85f5-4baa-b451-58bfa5971707",
               "event_type": "tool.attempt.failed",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 1,
                 "attempt": 1,
@@ -2591,28 +3817,68 @@
                 "tool_name": "search_recent_logs",
                 "transient": true
               },
-              "sequence": 9
+              "sequence": 9,
+              "span_id": "6e584c91-6cd9-493b-adf0-4b5c6b9ac1d3",
+              "status": "error",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "7cd83cbb-2f6a-4a43-bcff-45bbee34b001",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 1,
                 "attempt": 2,
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 10
+              "sequence": 10,
+              "span_id": "8ca54519-4b6a-4b63-a7fc-f45659fcac51",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "46eb3683-e34c-41d2-8ce9-e3cbf85e6ee0",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 1,
                 "attempt": 2,
+                "output": {
+                  "entries": [
+                    {
+                      "level": "ERROR",
+                      "message": "checkout timeout contacting ledger"
+                    }
+                  ]
+                },
                 "tool_name": "search_recent_logs"
               },
-              "sequence": 11
+              "sequence": 11,
+              "span_id": "8ca54519-4b6a-4b63-a7fc-f45659fcac51",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "7f5d6f86-5679-45e2-bc57-43b12acab7db",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
+              "payload": {
+                "action_step": 1,
+                "attempt": 2,
+                "cached": false,
+                "context_digest": "d40955f4c30faa5d1080ddc18910c4719e6ff6a3868ee018e915c2ba4ca1b553",
+                "current_step": 2,
+                "output_digest": "45112e3d9ff043c3795d157767652406be9df268488c53f9aa2899f470c427d6"
+              },
+              "sequence": 12,
+              "span_id": "184bc2dd-0f3a-4229-a69b-f775431a00db",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
+            },
+            {
+              "event_id": "89dbcf22-6a4d-4871-8def-70d7a5a6dd76",
               "event_type": "policy.action",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 2,
                 "arguments": {},
@@ -2620,28 +3886,64 @@
                 "tool_name": "get_deployment",
                 "type": "call_tool"
               },
-              "sequence": 13
+              "sequence": 13,
+              "span_id": "4ebdb623-f4cc-4c6a-bf4e-68c273efabab",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "b479f819-6375-4462-a39b-7aece46a7781",
               "event_type": "tool.attempt.started",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 2,
                 "attempt": 1,
                 "tool_name": "get_deployment"
               },
-              "sequence": 14
+              "sequence": 14,
+              "span_id": "c3f50455-2c00-4083-a48d-781cf8d3d50b",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "70c426bc-65e1-4eba-8960-4838d9fd2152",
               "event_type": "tool.attempt.succeeded",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 2,
                 "attempt": 1,
+                "output": {
+                  "deployment_id": "deploy-2026-09-04-001",
+                  "version": "2026.09.04.1"
+                },
                 "tool_name": "get_deployment"
               },
-              "sequence": 15
+              "sequence": 15,
+              "span_id": "c3f50455-2c00-4083-a48d-781cf8d3d50b",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "c253178f-89d9-4899-8479-527b37650ee5",
+              "event_type": "run.checkpointed",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
+              "payload": {
+                "action_step": 2,
+                "attempt": 1,
+                "cached": false,
+                "context_digest": "ca5befab241f77966c73585a1e324931495181a6c81cbf5032f9840cec11e3c4",
+                "current_step": 3,
+                "output_digest": "36592e9ee06e1be4f251d49ab4c0db08dc1d73c6658dbe3986144de670f1afe0"
+              },
+              "sequence": 16,
+              "span_id": "ad639377-dbc4-463c-a1b4-5ecc5e4f4d1f",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
+            },
+            {
+              "event_id": "fed57fc3-87e3-413f-a587-228ccd2273f9",
               "event_type": "policy.action",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "action_step": 3,
                 "evidence_refs": [
@@ -2653,10 +3955,15 @@
                 "summary": "Investigation recovered after the transient timeout.",
                 "type": "finish"
               },
-              "sequence": 17
+              "sequence": 17,
+              "span_id": "bbd1462d-f381-466b-ac54-1ebf61edb9d3",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             },
             {
+              "event_id": "3b9815dc-6585-414c-a615-3680b4449405",
               "event_type": "run.succeeded",
+              "parent_span_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
               "payload": {
                 "evidence_refs": [
                   "health",
@@ -2666,10 +3973,13 @@
                 "outcome": "diagnosed",
                 "summary": "Investigation recovered after the transient timeout."
               },
-              "sequence": 18
+              "sequence": 18,
+              "span_id": "6ad269ef-01dc-4d78-b276-06dabae095b1",
+              "status": "ok",
+              "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530"
             }
           ],
-          "trace_id": "5bb8f673-bcd9-4d77-afc6-6ab34bb09591",
+          "trace_id": "edaac01b-b9fc-4882-9a3d-c872c38b2530",
           "unnecessary_call_count": 0,
           "verified_transient_fault_count": 1,
           "write_execution_count": 0
@@ -2687,8 +3997,8 @@
         "invalid_output_rate": 0.0,
         "invalid_output_rejected_count": 1,
         "malformed_fault_injected_count": 1,
-        "p50_latency_ms": 34.4283,
-        "p95_latency_ms": 57.9833,
+        "p50_latency_ms": 34.9724,
+        "p95_latency_ms": 59.0962,
         "recovered_transient_fault_count": 2,
         "recovery_rate": 1.0,
         "retry_attempt_count": 2,
@@ -2710,17 +4020,17 @@
       "timeout_seconds": 1.0
     },
     "git_dirty": false,
-    "git_revision": "74112b3581594257886f3f0506b73386dc782c58",
-    "grader_version": "exact-v3",
+    "git_revision": "8eb67fc50b51aef2b28d4bd3be2d2e0052cec8cc",
+    "grader_version": "exact-v4",
     "latency_kind": "perf_counter_ns",
-    "normalization_version": "baseline-v3",
+    "normalization_version": "baseline-v4",
     "package_version": "0.1.0",
     "percentile_method": "nearest-rank",
     "policy_name": "scripted",
     "python_version": "3.12.13",
-    "report_version": "3",
-    "schema_version": "3",
-    "suite_hash": "80402b2928d47b57375607ffee3ebe0be6fd338f5b9ebfa64eaae76db0f2b251",
+    "report_version": "4",
+    "schema_version": "4",
+    "suite_hash": "a50733e04ca6c6ac6e852cef9261c0ffc258c6e361b4b851b6b29e0439f100f0",
     "suite_manifest": [
       {
         "approval_supplied": true,
@@ -2733,18 +4043,41 @@
         "logical_actions": [
           {
             "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_deployment",
+              "type": "call_tool"
+            },
             "action_step": 0,
             "kind": "call_tool",
             "tool_name": "get_deployment"
           },
           {
             "action_fingerprint": "a899b31189aa36dfc3fcecec4ab61f9614ec88467b9f271997a40b081ce9cf28",
+            "action_payload": {
+              "arguments": {
+                "deployment_id": "deploy-2026-09-04-001"
+              },
+              "idempotency_key": "approval-reconstruction-v1",
+              "tool_name": "prepare_rollback",
+              "type": "call_tool"
+            },
             "action_step": 1,
             "kind": "call_tool",
             "tool_name": "prepare_rollback"
           },
           {
             "action_fingerprint": "2c8ad720fe0e5f32e5e835403f4ec33458738872abfed4642c58cca29f7e90a2",
+            "action_payload": {
+              "evidence_refs": [
+                "deployment",
+                "approval"
+              ],
+              "outcome": "prepared",
+              "summary": "Rollback was prepared after durable approval reconstruction.",
+              "type": "finish"
+            },
             "action_step": 2,
             "kind": "finish",
             "tool_name": null
@@ -2773,18 +4106,36 @@
         "logical_actions": [
           {
             "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_service_health",
+              "type": "call_tool"
+            },
             "action_step": 0,
             "kind": "call_tool",
             "tool_name": "get_service_health"
           },
           {
             "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_deployment",
+              "type": "call_tool"
+            },
             "action_step": 1,
             "kind": "call_tool",
             "tool_name": "get_deployment"
           },
           {
             "action_fingerprint": "6d9426e8b02fd84b7c002b99a55c60509c8168427ad92a9271852ad2c76af4b5",
+            "action_payload": {
+              "evidence_refs": [],
+              "outcome": "diagnosed",
+              "summary": "This action is unreachable after safe schema rejection.",
+              "type": "finish"
+            },
             "action_step": 2,
             "kind": "finish",
             "tool_name": null
@@ -2807,24 +4158,52 @@
         "logical_actions": [
           {
             "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_service_health",
+              "type": "call_tool"
+            },
             "action_step": 0,
             "kind": "call_tool",
             "tool_name": "get_service_health"
           },
           {
             "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "search_recent_logs",
+              "type": "call_tool"
+            },
             "action_step": 1,
             "kind": "call_tool",
             "tool_name": "search_recent_logs"
           },
           {
             "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_deployment",
+              "type": "call_tool"
+            },
             "action_step": 2,
             "kind": "call_tool",
             "tool_name": "get_deployment"
           },
           {
             "action_fingerprint": "c0f6d9cb97fb1db16f619448038b1ec2cacf17c70a92b701600a7a1fe725dc55",
+            "action_payload": {
+              "evidence_refs": [
+                "health",
+                "logs",
+                "deployment"
+              ],
+              "outcome": "diagnosed",
+              "summary": "Checkout degradation traced to the current deployment.",
+              "type": "finish"
+            },
             "action_step": 3,
             "kind": "finish",
             "tool_name": null
@@ -2845,12 +4224,26 @@
         "logical_actions": [
           {
             "action_fingerprint": "28d7361d680bbeeef33415d9f83a61fa05c0431a3cfff78032d3a533b784861a",
+            "action_payload": {
+              "arguments": {
+                "unsupported_filter": true
+              },
+              "idempotency_key": null,
+              "tool_name": "search_recent_logs",
+              "type": "call_tool"
+            },
             "action_step": 0,
             "kind": "call_tool",
             "tool_name": "search_recent_logs"
           },
           {
             "action_fingerprint": "9c1c16f493b335e621f6c66e7bfa62674e29d75c80f3924d41b6ebef980ab6c9",
+            "action_payload": {
+              "evidence_refs": [],
+              "outcome": "diagnosed",
+              "summary": "This action is unreachable after input rejection.",
+              "type": "finish"
+            },
             "action_step": 1,
             "kind": "finish",
             "tool_name": null
@@ -2879,18 +4272,39 @@
         "logical_actions": [
           {
             "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_service_health",
+              "type": "call_tool"
+            },
             "action_step": 0,
             "kind": "call_tool",
             "tool_name": "get_service_health"
           },
           {
             "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_deployment",
+              "type": "call_tool"
+            },
             "action_step": 1,
             "kind": "call_tool",
             "tool_name": "get_deployment"
           },
           {
             "action_fingerprint": "340772312d15db9d88aa3cddb1a37a535c148d915af155f597a51062ca2ba816",
+            "action_payload": {
+              "evidence_refs": [
+                "health",
+                "deployment"
+              ],
+              "outcome": "diagnosed",
+              "summary": "Deployment evidence was collected after rate limiting cleared.",
+              "type": "finish"
+            },
             "action_step": 2,
             "kind": "finish",
             "tool_name": null
@@ -2920,24 +4334,52 @@
         "logical_actions": [
           {
             "action_fingerprint": "30fc278844b7d899c668741fc60cdf6621fb66205a634722a9ba5ee49596350d",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_service_health",
+              "type": "call_tool"
+            },
             "action_step": 0,
             "kind": "call_tool",
             "tool_name": "get_service_health"
           },
           {
             "action_fingerprint": "177992a123259f769387334e10eba6f0d1067e71c96379c1ea324f5d8342df5d",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "search_recent_logs",
+              "type": "call_tool"
+            },
             "action_step": 1,
             "kind": "call_tool",
             "tool_name": "search_recent_logs"
           },
           {
             "action_fingerprint": "4e523e0928fce0a3e0a839254a7ea1533a4eba951ee44816800acb141104d163",
+            "action_payload": {
+              "arguments": {},
+              "idempotency_key": null,
+              "tool_name": "get_deployment",
+              "type": "call_tool"
+            },
             "action_step": 2,
             "kind": "call_tool",
             "tool_name": "get_deployment"
           },
           {
             "action_fingerprint": "800424d7a8153f75e814cd5a0c02e15a3bfa3a12cb85fb8ce343d7e70653048a",
+            "action_payload": {
+              "evidence_refs": [
+                "health",
+                "logs",
+                "deployment"
+              ],
+              "outcome": "diagnosed",
+              "summary": "Investigation recovered after the transient timeout.",
+              "type": "finish"
+            },
             "action_step": 3,
             "kind": "finish",
             "tool_name": null
