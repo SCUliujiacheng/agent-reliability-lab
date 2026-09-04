@@ -8,20 +8,26 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/SCUliujiacheng/agent-reliability-lab",
-      "revision": "c7e1ac7d830ca2003593ca739d23052c20b6e75d"
+      "revision": "56e861ddd16a342c2ac601dd5b770a7391ad6af9"
     },
     "views": [
       {
         "id": "interactive-run",
         "label": "Interactive run",
         "focus": ["operator", "dashboard", "api", "runtime", "scenario-tools", "sqlite"],
-        "note": "Launch a deterministic scenario, approve guarded actions, and inspect the durable trace."
+        "note": "Launch a run, bind approval to the reviewed action, and inspect its durable trace."
       },
       {
         "id": "evaluation-gate",
         "label": "Evaluation gate",
-        "focus": ["cli", "evaluator", "runtime", "scenario-tools", "baseline"],
-        "note": "Compare fragile and resilient execution, then enforce regression claims against a versioned baseline."
+        "focus": ["operator", "dashboard", "api", "evaluator", "runtime", "scenario-tools", "sqlite", "baseline"],
+        "note": "Run paired evaluation from UI or CI, persist evidence, and gate it against a versioned baseline."
+      },
+      {
+        "id": "provider-path",
+        "label": "Optional provider path",
+        "focus": ["runtime", "provider-adapter", "provider-endpoint"],
+        "note": "Use bounded HTTPS requests for an optional OpenAI-compatible policy outside the local trust boundary."
       }
     ]
   },
@@ -39,7 +45,7 @@
       "type": "frontend",
       "label": "Evidence Dashboard",
       "sublabel": "React + Vite",
-      "tag": "traces + approvals",
+      "tag": "runs + evals + approvals",
       "sources": [
         {"path": "web/src/App.tsx", "label": "dashboard shell"},
         {"path": "web/src/components/TraceWaterfall.tsx", "label": "trace evidence"}
@@ -52,7 +58,7 @@
       "type": "backend",
       "label": "Reliability API",
       "sublabel": "FastAPI /v1",
-      "tag": "bounded payloads",
+      "tag": "trusted hosts + 64 KiB",
       "sources": [
         {"path": "src/agent_reliability_lab/api/app.py", "label": "HTTP entrypoint"},
         {"path": "src/agent_reliability_lab/api/services.py", "label": "API service boundary"}
@@ -65,7 +71,7 @@
       "type": "backend",
       "label": "Agent Runtime",
       "sublabel": "durable state machine",
-      "tag": "leases + retries",
+      "tag": "64 policy calls + retries",
       "sources": [
         {"path": "src/agent_reliability_lab/runtime/orchestrator.py", "label": "orchestrator"},
         {"path": "src/agent_reliability_lab/runtime/service.py", "label": "durable run service"}
@@ -78,7 +84,7 @@
       "type": "database",
       "label": "SQLite Evidence Store",
       "sublabel": "runs, events, approvals",
-      "tag": "atomic CAS",
+      "tag": "CAS + approval binding",
       "sources": [
         {"path": "src/agent_reliability_lab/storage/store.py", "label": "SQLite store"},
         {"path": "src/agent_reliability_lab/storage/models.py", "label": "persistence schema"}
@@ -99,6 +105,27 @@
       ],
       "pos": [690, 85],
       "size": [175, 72]
+    },
+    {
+      "id": "provider-adapter",
+      "type": "backend",
+      "label": "Provider Adapter",
+      "sublabel": "OpenAI-compatible httpx",
+      "tag": "bytes + deadline",
+      "sources": [
+        {"path": "src/agent_reliability_lab/providers/openai_compatible.py", "label": "bounded provider adapter"}
+      ],
+      "pos": [935, 85],
+      "size": [180, 72]
+    },
+    {
+      "id": "provider-endpoint",
+      "type": "external",
+      "label": "Provider Endpoint",
+      "sublabel": "Chat Completions API",
+      "tag": "off-loopback HTTPS",
+      "pos": [1170, 85],
+      "size": [180, 72]
     },
     {
       "id": "cli",
@@ -141,8 +168,8 @@
   "boundaries": [
     {
       "kind": "region",
-      "label": "Local reproducible workspace",
-      "wraps": ["dashboard", "api", "runtime", "sqlite", "scenario-tools", "evaluator", "baseline"],
+      "label": "Local demo trust boundary",
+      "wraps": ["dashboard", "api", "runtime", "sqlite", "scenario-tools", "provider-adapter", "evaluator", "baseline"],
       "pad": 24
     }
   ],
@@ -170,11 +197,21 @@
       "variant": "emphasis"
     },
     {
+      "id": "api-evaluator",
+      "from": "api",
+      "to": "evaluator",
+      "label": "run evaluation",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [531, 321],
+      "variant": "emphasis"
+    },
+    {
       "id": "runtime-store",
       "from": "runtime",
       "to": "sqlite",
       "label": "atomic state + trace",
-      "labelDy": -30,
+      "labelAt": [889, 321],
       "variant": "emphasis"
     },
     {
@@ -184,24 +221,50 @@
       "label": "validated tool calls"
     },
     {
+      "id": "runtime-provider-adapter",
+      "from": "runtime",
+      "to": "provider-adapter",
+      "label": "optional policy",
+      "variant": "dashed"
+    },
+    {
+      "id": "adapter-provider-endpoint",
+      "from": "provider-adapter",
+      "to": "provider-endpoint",
+      "label": "HTTPS POST /chat/completions",
+      "labelAt": [1143, 171],
+      "variant": "security"
+    },
+    {
       "id": "cli-evaluator",
       "from": "cli",
       "to": "evaluator",
       "label": "evaluate / gate",
-      "labelDy": -27,
+      "labelAt": [415, 516],
       "variant": "emphasis"
     },
     {
       "id": "evaluator-runtime",
       "from": "evaluator",
       "to": "runtime",
-      "label": "fragile + resilient runs"
+      "label": "fragile + resilient runs",
+      "labelAt": [657, 340]
     },
     {
       "id": "evaluator-baseline",
       "from": "evaluator",
       "to": "baseline",
       "label": "compare claims",
+      "labelAt": [780, 516],
+      "variant": "dashed"
+    },
+    {
+      "id": "evaluator-store",
+      "from": "evaluator",
+      "to": "sqlite",
+      "label": "persist reports",
+      "fromSide": "top",
+      "toSide": "bottom",
       "variant": "dashed"
     }
   ],
@@ -211,7 +274,7 @@
       "title": "Observable by design",
       "items": [
         "Every transition is a sequence-ordered trace event",
-        "Approvals and side effects share one durable state boundary"
+        "Approvals are atomically bound to the reviewed action fingerprint"
       ]
     },
     {
@@ -226,8 +289,8 @@
       "dot": "amber",
       "title": "Deliberate scope",
       "items": [
-        "Single-node SQLite demonstration, not a production control plane",
-        "Scripted local tools keep evidence reproducible and auditable"
+        "Single-process API and SQLite are demonstration boundaries",
+        "The optional provider endpoint is external and requires HTTPS off-loopback"
       ]
     }
   ]
