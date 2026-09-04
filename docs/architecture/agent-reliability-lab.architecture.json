@@ -6,6 +6,10 @@
     "locale": "en",
     "output": "agent-reliability-lab-architecture.html",
     "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/SCUliujiacheng/agent-reliability-lab",
+      "revision": "c7e1ac7d830ca2003593ca739d23052c20b6e75d"
+    },
     "views": [
       {
         "id": "interactive-run",
@@ -36,6 +40,10 @@
       "label": "Evidence Dashboard",
       "sublabel": "React + Vite",
       "tag": "traces + approvals",
+      "sources": [
+        {"path": "web/src/App.tsx", "label": "dashboard shell"},
+        {"path": "web/src/components/TraceWaterfall.tsx", "label": "trace evidence"}
+      ],
       "pos": [220, 235],
       "size": [160, 72]
     },
@@ -45,6 +53,10 @@
       "label": "Reliability API",
       "sublabel": "FastAPI /v1",
       "tag": "bounded payloads",
+      "sources": [
+        {"path": "src/agent_reliability_lab/api/app.py", "label": "HTTP entrypoint"},
+        {"path": "src/agent_reliability_lab/api/services.py", "label": "API service boundary"}
+      ],
       "pos": [450, 235],
       "size": [160, 72]
     },
@@ -54,6 +66,10 @@
       "label": "Agent Runtime",
       "sublabel": "durable state machine",
       "tag": "leases + retries",
+      "sources": [
+        {"path": "src/agent_reliability_lab/runtime/orchestrator.py", "label": "orchestrator"},
+        {"path": "src/agent_reliability_lab/runtime/service.py", "label": "durable run service"}
+      ],
       "pos": [690, 235],
       "size": [175, 72]
     },
@@ -63,6 +79,10 @@
       "label": "SQLite Evidence Store",
       "sublabel": "runs, events, approvals",
       "tag": "atomic CAS",
+      "sources": [
+        {"path": "src/agent_reliability_lab/storage/store.py", "label": "SQLite store"},
+        {"path": "src/agent_reliability_lab/storage/models.py", "label": "persistence schema"}
+      ],
       "pos": [935, 235],
       "size": [180, 72]
     },
@@ -72,6 +92,11 @@
       "label": "Scenario + Tool Lab",
       "sublabel": "deterministic faults",
       "tag": "6 scenarios",
+      "sources": [
+        {"path": "src/agent_reliability_lab/tools/gateway.py", "label": "tool gateway"},
+        {"path": "src/agent_reliability_lab/tools/faults.py", "label": "fault injector"},
+        {"path": "scenarios/incident-response/timeout-recovery.yaml", "label": "scenario contract"}
+      ],
       "pos": [690, 85],
       "size": [175, 72]
     },
@@ -80,6 +105,10 @@
       "type": "external",
       "label": "CLI / CI",
       "sublabel": "evaluate + gate",
+      "sources": [
+        {"path": "src/agent_reliability_lab/cli.py", "label": "CLI entrypoint"},
+        {"path": ".github/workflows/ci.yml", "label": "release gates"}
+      ],
       "pos": [220, 430],
       "size": [160, 66]
     },
@@ -89,6 +118,10 @@
       "label": "Evaluation Engine",
       "sublabel": "paired-mode metrics",
       "tag": "claims + provenance",
+      "sources": [
+        {"path": "src/agent_reliability_lab/evaluation/runner.py", "label": "evaluation runner"},
+        {"path": "src/agent_reliability_lab/evaluation/gate.py", "label": "fail-closed gate"}
+      ],
       "pos": [450, 430],
       "size": [175, 72]
     },
@@ -98,6 +131,9 @@
       "label": "Versioned Baseline",
       "sublabel": "JSON evidence artifact",
       "tag": "regression contract",
+      "sources": [
+        {"path": "benchmarks/baseline-report.json", "label": "versioned evidence"}
+      ],
       "pos": [935, 430],
       "size": [180, 72]
     }
