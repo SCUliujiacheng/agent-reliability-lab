@@ -1,9 +1,13 @@
 """Strict OpenAI-compatible chat-completions action adapter."""
 
+import asyncio
+import ipaddress
 import json
+import math
 import os
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import (
@@ -22,6 +26,8 @@ from agent_reliability_lab.domain.scenarios import Scenario
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
 
 _ACTION_ADAPTER: TypeAdapter[AgentAction] = TypeAdapter(AgentAction)
+_DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024
+_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class ProviderError(RuntimeError):
@@ -44,8 +50,12 @@ class ProviderHTTPStatusError(ProviderError):
     """Raised when the provider returns a non-success HTTP status."""
 
 
+class ProviderResponseTooLargeError(ProviderProtocolError):
+    """Raised when a provider response exceeds the configured byte ceiling."""
+
+
 class AsyncPostClient(Protocol):
-    async def post(self, *args: object, **kwargs: object) -> Any:
+    async def post(self, *args: object, **kwargs: object) -> httpx.Response:
         """Send one HTTP request."""
         ...
 
@@ -126,14 +136,32 @@ class OpenAICompatibleConfig:
     api_key_env: str
     connect_timeout_seconds: float = 5.0
     read_timeout_seconds: float = 30.0
+    total_timeout_seconds: float = 45.0
+    max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES
 
     def __post_init__(self) -> None:
-        if not self.base_url.startswith(("http://", "https://")):
+        parsed = urlsplit(self.base_url)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
             raise ValueError("base_url must be HTTP or HTTPS")
+        if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):
+            raise ValueError("remote provider base_url must use HTTPS")
         if not self.model or not self.api_key_env:
             raise ValueError("model and api_key_env are required")
         if self.connect_timeout_seconds <= 0 or self.read_timeout_seconds <= 0:
             raise ValueError("provider timeouts must be positive")
+        if (
+            not math.isfinite(self.total_timeout_seconds)
+            or self.total_timeout_seconds <= 0
+        ):
+            raise ValueError("total_timeout_seconds must be positive and finite")
+        if (
+            isinstance(self.max_response_bytes, bool)
+            or not isinstance(self.max_response_bytes, int)
+            or not 1 <= self.max_response_bytes <= _MAX_RESPONSE_BYTES
+        ):
+            raise ValueError(
+                f"max_response_bytes must be between 1 and {_MAX_RESPONSE_BYTES}"
+            )
 
 
 class OpenAICompatiblePolicy:
@@ -158,9 +186,15 @@ class OpenAICompatiblePolicy:
 
     async def next_action(self, run: Run, scenario: Scenario) -> AgentAction:
         body = self._request_body(run, scenario)
-        self._record(run, "provider.request", body)
-        headers = {"content-type": "application/json"}
         api_key = os.environ.get(self._config.api_key_env)
+        provider_secrets = {api_key} if api_key else set()
+        self._record(
+            run,
+            "provider.request",
+            body,
+            extra_secret_values=provider_secrets,
+        )
+        headers = {"content-type": "application/json"}
         if api_key:
             headers["authorization"] = f"Bearer {api_key}"
         timeout = httpx.Timeout(
@@ -168,20 +202,14 @@ class OpenAICompatiblePolicy:
             connect=self._config.connect_timeout_seconds,
         )
         try:
-            if self._client is not None:
-                response = await self._client.post(
-                    self._url, json=body, headers=headers, timeout=timeout
-                )
-            else:
-                async with httpx.AsyncClient(transport=self._transport) as client:
-                    response = await client.post(
-                        self._url, json=body, headers=headers, timeout=timeout
-                    )
-        except httpx.TimeoutException as error:
+            async with asyncio.timeout(self._config.total_timeout_seconds):
+                response_body = await self._read_response(body, headers, timeout)
+        except (TimeoutError, httpx.TimeoutException) as error:
             self._failed(
                 run,
                 "provider_timeout",
                 {"exception_type": type(error).__name__},
+                extra_secret_values=provider_secrets,
             )
             raise ProviderTimeoutError("provider request timed out") from error
         except httpx.RequestError as error:
@@ -189,26 +217,34 @@ class OpenAICompatiblePolicy:
                 run,
                 "provider_transport",
                 {"exception_type": type(error).__name__},
+                extra_secret_values=provider_secrets,
             )
             raise ProviderTransportError("provider transport failed") from error
-
-        try:
-            response.raise_for_status()
+        except ProviderResponseTooLargeError:
+            self._failed(
+                run,
+                "provider_response_too_large",
+                {"limit_bytes": self._config.max_response_bytes},
+                extra_secret_values=provider_secrets,
+            )
+            raise
         except httpx.HTTPStatusError as error:
+            status_code = error.response.status_code
             self._failed(
                 run,
                 "provider_http_status",
                 {
-                    "status_code": response.status_code,
+                    "status_code": status_code,
                     "exception_type": type(error).__name__,
                 },
+                extra_secret_values=provider_secrets,
             )
             raise ProviderHTTPStatusError(
-                f"provider returned HTTP {response.status_code}"
+                f"provider returned HTTP {status_code}"
             ) from error
 
         try:
-            raw_payload = response.json()
+            raw_payload = json.loads(response_body)
             envelope = _CompletionResponse.model_validate(raw_payload)
             action = self._parse_action(envelope)
         except (ValueError, ValidationError, json.JSONDecodeError) as error:
@@ -216,12 +252,57 @@ class OpenAICompatiblePolicy:
                 run,
                 "provider_protocol",
                 {"exception_type": type(error).__name__},
+                extra_secret_values=provider_secrets,
             )
             raise ProviderProtocolError(
                 "provider did not return one valid structured action"
             ) from error
-        self._record(run, "provider.response", envelope.model_dump(mode="json"))
+        self._record(
+            run,
+            "provider.response",
+            envelope.model_dump(mode="json"),
+            extra_secret_values=provider_secrets,
+        )
         return action
+
+    async def _read_response(
+        self,
+        body: dict[str, JsonValue],
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
+    ) -> bytes:
+        if isinstance(self._client, httpx.AsyncClient):
+            return await self._stream_response(self._client, body, headers, timeout)
+        if self._client is not None:
+            response = await self._client.post(
+                self._url,
+                json=body,
+                headers=headers,
+                timeout=timeout,
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            return _bounded_content(response.content, self._config.max_response_bytes)
+        async with httpx.AsyncClient(transport=self._transport) as client:
+            return await self._stream_response(client, body, headers, timeout)
+
+    async def _stream_response(
+        self,
+        client: httpx.AsyncClient,
+        body: dict[str, JsonValue],
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
+    ) -> bytes:
+        async with client.stream(
+            "POST",
+            self._url,
+            json=body,
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=False,
+        ) as response:
+            response.raise_for_status()
+            return await _read_bounded_stream(response, self._config.max_response_bytes)
 
     @property
     def _url(self) -> str:
@@ -274,8 +355,21 @@ class OpenAICompatiblePolicy:
         except (TypeError, json.JSONDecodeError, ValidationError) as error:
             raise ValueError("invalid structured action") from error
 
-    def _failed(self, run: Run, code: str, details: dict[str, JsonValue]) -> None:
-        self._record(run, "provider.failed", {"code": code, **details}, status="error")
+    def _failed(
+        self,
+        run: Run,
+        code: str,
+        details: dict[str, JsonValue],
+        *,
+        extra_secret_values: set[str],
+    ) -> None:
+        self._record(
+            run,
+            "provider.failed",
+            {"code": code, **details},
+            status="error",
+            extra_secret_values=extra_secret_values,
+        )
 
     def _record(
         self,
@@ -284,6 +378,7 @@ class OpenAICompatiblePolicy:
         payload: JsonValue,
         *,
         status: str = "ok",
+        extra_secret_values: set[str] | None = None,
     ) -> None:
         if self._recorder is not None:
             self._recorder.record(
@@ -292,7 +387,46 @@ class OpenAICompatiblePolicy:
                 payload,
                 parent_span_id=run.trace_id,
                 status=status,
+                extra_secret_values=extra_secret_values,
             )
+
+
+async def _read_bounded_stream(response: httpx.Response, max_bytes: int) -> bytes:
+    declared_length = response.headers.get("content-length")
+    if declared_length is not None:
+        try:
+            if int(declared_length) > max_bytes:
+                raise ProviderResponseTooLargeError(
+                    "provider response exceeded configured byte limit"
+                )
+        except ValueError:
+            pass
+
+    content = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(content) + len(chunk) > max_bytes:
+            raise ProviderResponseTooLargeError(
+                "provider response exceeded configured byte limit"
+            )
+        content.extend(chunk)
+    return bytes(content)
+
+
+def _bounded_content(content: bytes, max_bytes: int) -> bytes:
+    if len(content) > max_bytes:
+        raise ProviderResponseTooLargeError(
+            "provider response exceeded configured byte limit"
+        )
+    return content
+
+
+def _is_loopback_host(hostname: str) -> bool:
+    if hostname.casefold() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 def _scenario_tools(scenario: Scenario) -> list[JsonValue]:
@@ -346,6 +480,7 @@ __all__ = [
     "ProviderError",
     "ProviderHTTPStatusError",
     "ProviderProtocolError",
+    "ProviderResponseTooLargeError",
     "ProviderTimeoutError",
     "ProviderTransportError",
 ]

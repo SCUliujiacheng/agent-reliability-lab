@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
@@ -34,6 +35,7 @@ from agent_reliability_lab.tools.faults import (
 )
 
 Sleeper = Callable[[float], Awaitable[None]]
+MonotonicClock = Callable[[], float]
 
 
 class ToolCallResult(BaseModel):
@@ -76,12 +78,14 @@ class ToolGateway:
         registry: ToolRegistry,
         *,
         sleeper: Sleeper | None = None,
+        clock: MonotonicClock | None = None,
         incident_backend: object | None = None,
     ) -> None:
         self.store = store
         self._recorder = recorder
         self._registry = registry
         self._sleep: Sleeper = sleeper or asyncio.sleep
+        self._clock: MonotonicClock = clock or time.perf_counter
         self.incident_backend = incident_backend
         self.events: list[TraceEvent] = []
 
@@ -251,6 +255,7 @@ class ToolGateway:
                 },
                 span_id=span_id,
             )
+            attempt_started_at = self._clock()
             error: ToolExecutionError
             try:
                 injected = faults.fault_for(action.tool_name, attempt)
@@ -301,6 +306,7 @@ class ToolGateway:
                         "action_step": run.current_step,
                     },
                     span_id=span_id,
+                    duration_ms=self._elapsed_ms(attempt_started_at),
                     status="error",
                 )
                 raise
@@ -327,6 +333,7 @@ class ToolGateway:
                         "output": _traceable_output(output),
                     },
                     span_id=span_id,
+                    duration_ms=self._elapsed_ms(attempt_started_at),
                 )
                 return ToolCallResult.succeeded(output, attempts=attempt)
 
@@ -349,6 +356,7 @@ class ToolGateway:
                 "tool.attempt.failed",
                 payload,
                 span_id=span_id,
+                duration_ms=self._elapsed_ms(attempt_started_at),
                 status="error",
             )
             if retry_delay is None:
@@ -446,6 +454,7 @@ class ToolGateway:
         payload: JsonValue,
         *,
         span_id: UUID,
+        duration_ms: float | None = None,
         status: str = "ok",
     ) -> None:
         self.events.append(
@@ -455,9 +464,13 @@ class ToolGateway:
                 payload,
                 span_id=span_id,
                 parent_span_id=run.trace_id,
+                duration_ms=duration_ms,
                 status=status,
             )
         )
+
+    def _elapsed_ms(self, started_at: float) -> float:
+        return max(0.0, (self._clock() - started_at) * 1000.0)
 
 
 def _request_fingerprint(tool_name: str, validated_input: BaseModel) -> str:

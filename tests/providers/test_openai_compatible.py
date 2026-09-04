@@ -1,6 +1,8 @@
 """OpenAI-compatible structured-action policy tests."""
 
+import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -172,6 +174,116 @@ async def test_provider_parses_standard_function_tool_call() -> None:
 
 
 @pytest.mark.asyncio
+async def test_provider_accepts_response_at_exact_configured_byte_limit() -> None:
+    """Changing the inclusive byte ceiling into an off-by-one rejection must fail."""
+    payload = full_response(
+        {"content": '{"type":"finish","summary":"done","outcome":"done"}'}
+    )
+    encoded = json.dumps(payload, separators=(",", ":")).encode()
+    bounded = replace(config(), max_response_bytes=len(encoded))
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, content=encoded))
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        action = await OpenAICompatiblePolicy(bounded, client=client).next_action(
+            Run.new("scenario", "resilient"), scenario()
+        )
+
+    assert action.outcome == "done"
+
+
+@pytest.mark.asyncio
+async def test_provider_stops_streaming_after_response_limit_and_traces_stable_error(
+    tmp_path: Path,
+) -> None:
+    """Buffering or consuming an oversized provider body must fail this test."""
+
+    class CountingStream(httpx.AsyncByteStream):
+        def __init__(self) -> None:
+            self.chunks_read = 0
+
+        async def __aiter__(self):  # type: ignore[no-untyped-def]
+            for chunk in (b"12345", b"6", b"must-not-be-read"):
+                self.chunks_read += 1
+                yield chunk
+
+    body = CountingStream()
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, stream=body))
+    bounded = replace(config(), max_response_bytes=5)
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / "oversized.db")
+    )
+    store.create_schema()
+    run = store.save_run(Run.new("scenario", "resilient"))
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        policy = OpenAICompatiblePolicy(
+            bounded, client=client, recorder=TraceRecorder(store)
+        )
+        with pytest.raises(ProviderError, match="configured byte limit") as caught:
+            await policy.next_action(run, scenario())
+
+    assert body.chunks_read == 2
+    assert type(caught.value).__name__ == "ProviderResponseTooLargeError"
+    failed = [
+        event
+        for event in store.list_events(run.trace_id)
+        if event.event_type == "provider.failed"
+    ]
+    assert failed[0].payload == {
+        "code": "provider_response_too_large",
+        "limit_bytes": 5,
+    }
+
+
+@pytest.mark.parametrize("limit", [0, 16 * 1024 * 1024 + 1, True])
+def test_provider_rejects_invalid_response_byte_limits(limit: object) -> None:
+    """Invalid byte ceilings must fail before any provider request is possible."""
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        replace(config(), max_response_bytes=limit)
+
+
+def test_provider_allows_loopback_http_but_rejects_remote_plaintext() -> None:
+    """Bearer credentials must never be configured for a remote plaintext hop."""
+    for base_url in (
+        "http://localhost:8000/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://[::1]:8000/v1",
+    ):
+        assert replace(config(), base_url=base_url).base_url == base_url
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        replace(config(), base_url="http://provider.example/v1")
+
+
+@pytest.mark.asyncio
+async def test_provider_total_deadline_covers_streaming_body() -> None:
+    """Read inactivity timeouts alone must not permit an endless response stream."""
+
+    class NeverEndingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):  # type: ignore[no-untyped-def]
+            yield b"{"
+            await asyncio.Event().wait()
+
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, stream=NeverEndingStream())
+    )
+    bounded = replace(config(), total_timeout_seconds=0.01)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(ProviderTimeoutError, match="timed out"):
+            await OpenAICompatiblePolicy(bounded, client=client).next_action(
+                Run.new("scenario", "resilient"), scenario()
+            )
+
+
+@pytest.mark.parametrize("deadline", [0, float("inf")])
+def test_provider_rejects_invalid_total_deadline(deadline: float) -> None:
+    """A non-positive or unbounded total deadline would disable the safety cap."""
+    with pytest.raises(ValueError, match="total_timeout_seconds"):
+        replace(config(), total_timeout_seconds=deadline)
+
+
+@pytest.mark.asyncio
 async def test_provider_timeout_is_typed_and_uses_explicit_timeout_values() -> None:
     observed: list[dict[str, object]] = []
 
@@ -222,6 +334,43 @@ async def test_provider_traces_redact_credentials_and_secret_content(
         [event.model_dump(mode="json") for event in store.list_events(run.trace_id)]
     )
     assert "top-secret" not in serialized
+    assert "[REDACTED]" in serialized
+
+
+@pytest.mark.asyncio
+async def test_provider_automatically_redacts_its_api_key_from_success_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider reflecting its own credential must never persist that value."""
+    api_key = "provider-reflected-success-secret"
+    monkeypatch.setenv("TEST_PROVIDER_KEY", api_key)
+    store = SQLiteRunStore.from_settings(
+        Settings(data_dir=tmp_path, database_path=tmp_path / "reflected-success.db")
+    )
+    store.create_schema()
+    run = store.save_run(
+        Run.new("scenario", "resilient").model_copy(
+            update={"context": {"note": f"provider echoed {api_key}"}}
+        )
+    )
+    response = full_response(
+        {
+            "content": json.dumps(
+                {"type": "finish", "summary": api_key, "outcome": "done"}
+            )
+        }
+    )
+
+    async with httpx.AsyncClient(transport=json_transport(response)) as client:
+        action = await OpenAICompatiblePolicy(
+            config(), client=client, recorder=TraceRecorder(store)
+        ).next_action(run, scenario())
+
+    assert action.outcome == "done"
+    serialized = json.dumps(
+        [event.model_dump(mode="json") for event in store.list_events(run.trace_id)]
+    )
+    assert api_key not in serialized
     assert "[REDACTED]" in serialized
 
 

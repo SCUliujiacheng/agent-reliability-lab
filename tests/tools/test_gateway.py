@@ -36,7 +36,12 @@ def _call(name: str, *, key: str | None = None, **arguments: object) -> CallTool
     return CallToolAction(tool_name=name, arguments=arguments, idempotency_key=key)
 
 
-def _gateway(tmp_path: Path, *, sleeper: Any | None = None) -> tuple[ToolGateway, Run]:
+def _gateway(
+    tmp_path: Path,
+    *,
+    sleeper: Any | None = None,
+    clock: Any | None = None,
+) -> tuple[ToolGateway, Run]:
     settings = Settings(data_dir=tmp_path, database_path=tmp_path / "runs.db")
     store = SQLiteRunStore.from_settings(settings)
     store.create_schema()
@@ -48,6 +53,7 @@ def _gateway(tmp_path: Path, *, sleeper: Any | None = None) -> tuple[ToolGateway
             TraceRecorder(store),
             incident_registry(backend),
             sleeper=sleeper,
+            clock=clock,
             incident_backend=backend,
         ),
         run,
@@ -478,6 +484,25 @@ def test_attempt_events_share_span_parent_and_terminal_status(tmp_path: Path) ->
     assert first_attempt[0].parent_span_id == run.trace_id
     assert first_attempt[-1].status == "error"
     assert second_attempt[-1].status == "ok"
+
+
+def test_successful_attempt_records_controlled_monotonic_duration(
+    tmp_path: Path,
+) -> None:
+    """Removing handler latency from terminal events must fail this test."""
+    readings = iter((10.0, 10.125))
+    gateway, run = _gateway(tmp_path, clock=lambda: next(readings))
+
+    result = gateway.call_sync(run, _call("get_deployment"))
+
+    assert result.status == "succeeded"
+    assert gateway.events[0].event_type == "tool.attempt.started"
+    assert gateway.events[0].duration_ms is None
+    terminal = gateway.events[-1]
+    assert terminal.event_type == "tool.attempt.succeeded"
+    assert terminal.duration_ms == pytest.approx(125.0)
+    stored = gateway.store.list_events(run.trace_id)
+    assert stored[-1].duration_ms == pytest.approx(125.0)
 
 
 def test_unknown_fault_tool_is_rejected_before_execution(tmp_path: Path) -> None:

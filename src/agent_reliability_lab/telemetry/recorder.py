@@ -26,15 +26,19 @@ class TraceRecorder:
         *,
         span_id: UUID | None = None,
         parent_span_id: UUID | None = None,
+        duration_ms: float | None = None,
         status: str = "ok",
+        extra_secret_values: set[str] | None = None,
     ) -> TraceEvent:
         """Sanitize and append one trace event."""
+        secret_values = self._secret_values | (extra_secret_values or set())
         event = TraceEvent.new(
             trace_id,
             event_type,
-            sanitize_payload(payload, self._secret_values),
+            sanitize_payload(payload, secret_values),
             span_id=span_id,
             parent_span_id=parent_span_id,
+            duration_ms=duration_ms,
             status=status,
         )
         return self._store.append_event(event)
