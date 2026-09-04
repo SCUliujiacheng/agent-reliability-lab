@@ -65,8 +65,8 @@ The baseline records nearest-rank local `perf_counter_ns` measurements:
 
 | Metric | Fragile | Resilient |
 | --- | ---: | ---: |
-| P50 case latency | 29.8 ms | 37.5 ms |
-| P95 case latency | 65.6 ms | 57.8 ms |
+| P50 case latency | 34.4 ms | 44.7 ms |
+| P95 case latency | 77.6 ms | 68.7 ms |
 
 These values help detect gross regressions in one environment. They are not a
 cross-machine throughput benchmark and are not enforced as headline quality
@@ -91,7 +91,9 @@ Baseline provenance:
 - report/schema version: `6`
 - grader: `exact-v6`
 - policy: `scripted`
-- suite hash: `46135ff3279835cf7159261565203651f19aad29959591a9fcea4aba9381697f`
+- suite hash: `21d15bd476344661681b5740ffcced169460a2201c9d945cc8e575ece983a23c`
+- Git revision: `5477bd965b254378849941c8a06888c202a373eb`
+- Git dirty: `false`
 - credential cost: `$0`
 
 The baseline is regenerated after release-source changes so its clean Git
