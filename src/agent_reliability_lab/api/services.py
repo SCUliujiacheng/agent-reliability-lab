@@ -190,12 +190,14 @@ class RunApplicationService:
         queries: RunQueryService,
         locks: _RunLocks,
         secret_values: frozenset[str],
+        max_action_steps: int,
     ) -> None:
         self._store = store
         self._catalog = catalog
         self._queries = queries
         self._locks = locks
         self._secret_values = secret_values
+        self._max_action_steps = max_action_steps
 
     def start(
         self, scenario_id: str, mode: Literal["fragile", "resilient"]
@@ -258,7 +260,13 @@ class RunApplicationService:
             incident_registry(backend),
             incident_backend=backend,
         )
-        return RunService(self._store, recorder, gateway, self._catalog.load)
+        return RunService(
+            self._store,
+            recorder,
+            gateway,
+            self._catalog.load,
+            max_action_steps=self._max_action_steps,
+        )
 
 
 class EvaluationService:
@@ -340,6 +348,7 @@ class ApiContainer:
             self.queries,
             _RunLocks(),
             settings.secret_values,
+            settings.max_action_steps,
         )
         self.evaluations = EvaluationService(
             self.store, self.catalog, BoundedSemaphore(1)

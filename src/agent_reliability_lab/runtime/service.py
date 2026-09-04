@@ -5,6 +5,10 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Literal
 from uuid import UUID, uuid4
 
+from agent_reliability_lab.config import (
+    DEFAULT_MAX_ACTION_STEPS,
+    validate_action_step_budget,
+)
 from agent_reliability_lab.domain.runs import Run, RunStatus
 from agent_reliability_lab.domain.scenarios import Scenario
 from agent_reliability_lab.runtime.orchestrator import DurableOrchestrator
@@ -40,6 +44,7 @@ class RunService:
         scenario_loader: ScenarioLoader,
         *,
         policies: Mapping[str, Policy] | None = None,
+        max_action_steps: int = DEFAULT_MAX_ACTION_STEPS,
         heartbeat_interval_seconds: float | None = None,
         heartbeat_sleeper: HeartbeatSleeper = asyncio.sleep,
     ) -> None:
@@ -50,6 +55,7 @@ class RunService:
         configured = dict(policies or {})
         configured.setdefault("scripted", ScriptedPolicy())
         self._policies = configured
+        self._max_action_steps = validate_action_step_budget(max_action_steps)
         interval = heartbeat_interval_seconds or store.run_lease_seconds / 3
         if interval <= 0 or interval >= store.run_lease_seconds:
             raise ValueError("heartbeat interval must be inside the run lease")
@@ -169,7 +175,11 @@ class RunService:
         primary_error: BaseException | None = None
         try:
             await DurableOrchestrator(
-                self.store, self._recorder, self._gateway, policy
+                self.store,
+                self._recorder,
+                self._gateway,
+                policy,
+                max_action_steps=self._max_action_steps,
             ).execute(claimed, scenario, owner_token=owner_token)
         except BaseException as error:
             primary_error = error

@@ -8,6 +8,10 @@ from typing import Any, cast
 
 from pydantic import JsonValue
 
+from agent_reliability_lab.config import (
+    DEFAULT_MAX_ACTION_STEPS,
+    validate_action_step_budget,
+)
 from agent_reliability_lab.domain.actions import AgentAction, FailAction, FinishAction
 from agent_reliability_lab.domain.runs import Run, RunStatus
 from agent_reliability_lab.domain.scenarios import FaultType, Scenario
@@ -27,11 +31,14 @@ class DurableOrchestrator:
         recorder: TraceRecorder,
         gateway: ToolGateway,
         policy: Policy,
+        *,
+        max_action_steps: int = DEFAULT_MAX_ACTION_STEPS,
     ) -> None:
         self._store = store
         self._recorder = recorder
         self._gateway = gateway
         self._policy = policy
+        self._max_action_steps = validate_action_step_budget(max_action_steps)
 
     async def execute(self, run: Run, scenario: Scenario, *, owner_token: str) -> Run:
         """Advance an owned run to its next durable stop."""
@@ -62,6 +69,24 @@ class DurableOrchestrator:
             if run.pending_action is not None:
                 action = run.pending_action
             else:
+                budget_used = max(run.current_step, run.policy_calls_started)
+                if budget_used >= self._max_action_steps:
+                    run = self._terminal_failure(
+                        run,
+                        "action_budget_exhausted",
+                        owner_token=owner_token,
+                    )
+                    break
+                run = self._save(
+                    run.model_copy(
+                        update={
+                            "policy_calls_started": budget_used + 1,
+                            "updated_at": datetime.now(UTC),
+                        }
+                    ),
+                    previous=run,
+                    owner_token=owner_token,
+                )
                 try:
                     action = await self._policy.next_action(run, scenario)
                 except asyncio.CancelledError:
@@ -223,8 +248,19 @@ class DurableOrchestrator:
                 "result": payload,
             }
         )
-        saved = self._save(terminal, previous=run, owner_token=owner_token)
-        self._record(saved, "run.failed", payload, status="error")
+        event = self._recorder.build_event(
+            run.trace_id,
+            "run.failed",
+            payload,
+            parent_span_id=run.trace_id,
+            status="error",
+        )
+        saved, _ = self._store.save_run_owned_with_event(
+            terminal,
+            event,
+            owner_token=owner_token,
+            expected_version=run.version,
+        )
         return saved
 
     def _save(self, changed: Run, *, previous: Run, owner_token: str) -> Run:

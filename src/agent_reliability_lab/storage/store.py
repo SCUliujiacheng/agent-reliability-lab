@@ -287,6 +287,93 @@ class SQLiteRunStore:
             lease = session.get(RunExecutionLeaseRow, str(run.id))
             return _with_execution_lease(persisted, lease)
 
+    def save_run_owned_with_event(
+        self,
+        run: Run,
+        event_value: TraceEvent,
+        *,
+        owner_token: str,
+        expected_version: int,
+    ) -> tuple[Run, TraceEvent]:
+        """Atomically checkpoint an owned run and append its audit event."""
+        if event_value.trace_id != run.trace_id:
+            raise ValueError("event trace must match the run trace")
+        clean = event_value.model_copy(
+            update={
+                "payload": sanitize_payload(event_value.payload, self._secret_values),
+                "attributes": sanitize_payload(
+                    event_value.attributes, self._secret_values
+                ),
+            }
+        )
+        now = self._aware_now().isoformat()
+        persisted = _without_execution_lease(
+            run.model_copy(update={"version": expected_version + 1})
+        )
+        valid_lease = (
+            select(RunExecutionLeaseRow.run_id)
+            .where(
+                RunExecutionLeaseRow.run_id == str(run.id),
+                RunExecutionLeaseRow.owner_token == owner_token,
+                RunExecutionLeaseRow.lease_expires_at > now,
+            )
+            .exists()
+        )
+        with self._session.begin() as session:
+            changed = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(RunRow)
+                    .where(
+                        RunRow.id == str(run.id),
+                        RunRow.version == expected_version,
+                        valid_lease,
+                    )
+                    .values(
+                        payload=_dump(persisted),
+                        trace_id=str(run.trace_id),
+                        version=expected_version + 1,
+                    )
+                ),
+            )
+            if changed.rowcount != 1:
+                lease = session.get(RunExecutionLeaseRow, str(run.id))
+                if not _lease_is_owned(lease, owner_token, now):
+                    raise RunExecutionConflictError(
+                        "run execution ownership lost at checkpoint"
+                    )
+                raise ConcurrentUpdateError("stale run version")
+            next_sequence = session.execute(
+                insert(TraceCounterRow)
+                .values(trace_id=str(clean.trace_id), next_sequence=1)
+                .on_conflict_do_update(
+                    index_elements=[TraceCounterRow.trace_id],
+                    set_={"next_sequence": TraceCounterRow.next_sequence + 1},
+                )
+                .returning(TraceCounterRow.next_sequence)
+            ).scalar_one()
+            stored = clean.model_copy(update={"sequence": next_sequence})
+            session.add(
+                EventRow(
+                    id=str(stored.id),
+                    trace_id=str(stored.trace_id),
+                    span_id=str(stored.span_id),
+                    parent_span_id=str(stored.parent_span_id)
+                    if stored.parent_span_id
+                    else None,
+                    sequence=next_sequence,
+                    event_type=stored.event_type,
+                    payload=_dump(stored.payload),
+                    attributes=_dump(stored.attributes),
+                    duration_ms=stored.duration_ms,
+                    status=stored.status,
+                    created_at=stored.created_at.isoformat(),
+                )
+            )
+            lease = session.get(RunExecutionLeaseRow, str(run.id))
+            canonical = _with_execution_lease(persisted, lease)
+        return canonical, stored
+
     def get_run(self, run_id: UUID) -> Run | None:
         with self._session() as session:
             row = session.get(RunRow, str(run_id))

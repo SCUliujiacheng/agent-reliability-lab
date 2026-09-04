@@ -48,6 +48,7 @@ class Run(BaseModel):
     updated_at: datetime
     trace_id: UUID
     policy_name: str = Field(default="scripted", min_length=1, max_length=128)
+    policy_calls_started: int = Field(default=0, ge=0)
     context: dict[str, object] = Field(default_factory=dict)
     pending_approval: bool = False
     pending_action: CallToolAction | None = None

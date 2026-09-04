@@ -9,6 +9,8 @@ _CATALOG_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,127})$")
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _DEFAULT_BODY_LIMIT = 64 * 1024
 _DEFAULT_TRUSTED_HOSTS = ("localhost", "127.0.0.1", "api")
+DEFAULT_MAX_ACTION_STEPS = 64
+MAX_ACTION_STEPS_LIMIT = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,11 +24,13 @@ class Settings:
     cors_origins: tuple[str, ...] = ()
     trusted_hosts: tuple[str, ...] = _DEFAULT_TRUSTED_HOSTS
     max_request_body_bytes: int = _DEFAULT_BODY_LIMIT
+    max_action_steps: int = DEFAULT_MAX_ACTION_STEPS
     secret_values: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_request_body_bytes <= 1024 * 1024:
             raise ValueError("request body limit must be between 1 byte and 1 MiB")
+        validate_action_step_budget(self.max_action_steps)
         if "*" in self.cors_origins:
             raise ValueError("CORS origins must be explicit")
         normalized_hosts = tuple(host.lower() for host in self.trusted_hosts)
@@ -83,6 +87,12 @@ class Settings:
             )
         except ValueError as error:
             raise ValueError("request body limit must be an integer") from error
+        try:
+            max_action_steps = int(
+                environ.get("ARL_MAX_ACTION_STEPS", str(DEFAULT_MAX_ACTION_STEPS))
+            )
+        except ValueError as error:
+            raise ValueError("action step budget must be an integer") from error
         secrets = frozenset(
             value for value in environ.get("ARL_SECRET_VALUES", "").split(",") if value
         )
@@ -94,6 +104,7 @@ class Settings:
             cors_origins=origins,
             trusted_hosts=trusted_hosts,
             max_request_body_bytes=body_limit,
+            max_action_steps=max_action_steps,
             secret_values=secrets,
         )
 
@@ -107,3 +118,17 @@ def _is_exact_host(host: str) -> bool:
     if not host or host != host.strip() or len(host) > 253:
         return False
     return all(_HOST_LABEL.fullmatch(label) is not None for label in host.split("."))
+
+
+def validate_action_step_budget(value: object) -> int:
+    """Return one bounded logical-action budget or fail closed."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 1 <= value <= MAX_ACTION_STEPS_LIMIT
+    ):
+        raise ValueError(
+            f"action step budget must be an integer between 1 and "
+            f"{MAX_ACTION_STEPS_LIMIT}"
+        )
+    return value
