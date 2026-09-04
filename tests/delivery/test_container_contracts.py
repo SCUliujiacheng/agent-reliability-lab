@@ -102,6 +102,24 @@ def test_nginx_denies_framing_on_success_and_named_413_responses() -> None:
     assert "add_header" not in handler
 
 
+def test_nginx_static_assets_keep_security_headers_with_cache_headers() -> None:
+    """Catch Nginx add_header inheritance loss inside the asset location."""
+
+    assets = _nginx_named_location("/assets/")
+    expected = {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "X-Frame-Options": "DENY",
+    }
+    for name, value in expected.items():
+        assert re.search(
+            rf'^\s*add_header\s+{re.escape(name)}\s+"{re.escape(value)}"\s+always;',
+            assets,
+            re.MULTILINE,
+        ), f"/assets/ must retain {name} when it defines Cache-Control"
+
+
 def test_dockerfile_syntax_frontends_share_one_immutable_digest() -> None:
     """Prevent either BuildKit frontend from drifting behind a mutable tag."""
 
@@ -140,3 +158,29 @@ def test_compose_smoke_exercises_the_proxy_oversized_body_contract() -> None:
     assert '["error"]["code"] == "request_too_large"' in smoke
     assert 'headers["Content-Security-Policy"] == "frame-ancestors \'none\'"' in smoke
     assert 'headers["X-Frame-Options"] == "DENY"' in smoke
+
+
+def test_compose_smoke_uses_exact_approval_and_checks_asset_headers() -> None:
+    """Keep the real container workflow aligned with public security contracts."""
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["containers"]["steps"]
+    smoke = next(
+        step
+        for step in steps
+        if step.get("name") == "Exercise same-origin HTTP and SQLite persistence"
+    )["run"]
+
+    assert '["pending_approval"]["action_step"]' in smoke
+    assert '["pending_approval"]["action_fingerprint"]' in smoke
+    assert '\\"action_step\\":${action_step}' in smoke
+    assert '\\"action_fingerprint\\":\\"${action_fingerprint}\\"' in smoke
+    assert "asset-response.headers" in smoke
+    assert 'asset_headers["X-Content-Type-Options"] == "nosniff"' in smoke
+    assert (
+        'asset_headers["Content-Security-Policy"] == "frame-ancestors \'none\'"'
+        in smoke
+    )
+    assert 'asset_headers["X-Frame-Options"] == "DENY"' in smoke

@@ -14,8 +14,9 @@ every file.
 
 ## Five-minute demo
 
-1. Open the dashboard after running the frozen evaluation. Point out the
-   66.7% versus 100% correctness result and the exact six-case denominator.
+1. Open the dashboard, click **Run evaluation**, and inspect the returned
+   report. Point out the 66.7% versus 100% correctness result and the exact
+   six-case denominator.
 2. Launch `timeout-recovery` in resilient mode. Open the trace and follow the
    injected timeout, failed attempt, retry, successful attempt, checkpoint, and
    terminal result in sequence.
@@ -41,7 +42,7 @@ folded into the deterministic headline result.
 The project needs durable reconstruction, transactions, uniqueness, and
 compare-and-swap behavior without an external service. SQLite with WAL is a
 good single-node demonstration substrate. The code treats persistence as the
-coordination boundary, including concurrent approval decisions, while the
+coordination boundary, including cross-instance approval decisions, while the
 documentation explicitly avoids claiming multi-node production readiness.
 
 ### How is exactly-once behavior approached?
@@ -64,10 +65,17 @@ makes the artifact auditable and causes corruption to fail closed.
 
 Only registered tools can run; arbitrary shell execution is absent. Inputs and
 outputs are validated with Pydantic. Traces are sanitized before persistence,
-request bodies are bounded, CORS origins are explicit, and public API responses
-use narrow DTOs and stable errors. These controls reduce risk, but the demo has
-no authentication or tenant isolation and must not be exposed as a production
-control plane.
+request bodies are bounded, CORS origins are explicit, Host values use an exact
+allowlist, and Nginx rejects unknown virtual hosts. Browser responses deny
+framing. The optional provider requires remote HTTPS, disables redirects, and
+bounds total time and streamed response bytes while redacting its credential.
+Each run also bounds new policy calls with durable pre-invocation reservations;
+tool retries do not consume extra slots, and exhaustion is persisted before
+another policy call.
+Application routes use narrow DTOs and stable JSON errors; the outer Host
+boundary can instead return a plain 400 or empty Nginx 444. These controls
+reduce risk, but the demo has no authentication or tenant isolation and must
+not be exposed as a production control plane.
 
 ## Likely follow-up questions
 
@@ -81,15 +89,23 @@ orchestration control, add a separate provider-backed suite, record model and
 prompt versions, repeat cases over seeds, separate deterministic safety checks
 from statistical quality metrics, and publish uncertainty and cost.
 
-**How would you prevent approval replay?**  Bind approval to run ID, pending
-action fingerprint, actor, decision, and current version; consume it
-transactionally with the state transition; expire stale approvals; and require
-authenticated, authorized actors in production.
+**How is approval replay bounded today?**  The client must echo the run's
+current action step and fingerprint. One SQLite transaction records a decision
+only while the run is still waiting for that exact action; stale targets are
+rejected and exact duplicates converge. Authentication, authorization, trusted
+actor identity, and approval expiry remain production work.
 
-**What failure was hardest?**  Cross-process approval races are more subtle than
-button debouncing. The final tests instantiate two application objects over the
-same database and force competing decisions, proving same-decision idempotency
-and conflicting-decision convergence at the persistence boundary.
+**What does the action budget count?**  Each new policy call reserves one
+durable slot before invocation, so cancellation cannot reset the allowance. A
+returned `finish` consumes that reservation; tool retries do not. A pending
+approval resumes the action selected before the pause without another
+reservation. At the limit, the runtime atomically records terminal state and
+`run.failed` with `action_budget_exhausted`, without one more policy call.
+
+**What failure was hardest?**  Cross-instance approval races are more subtle
+than button debouncing. The tests instantiate two application objects over the
+same SQLite database and force competing decisions, proving same-decision
+idempotency and conflicting-decision convergence at that persistence boundary.
 
 **What would you build next?**  PostgreSQL migrations, authenticated users and
 RBAC, distributed workers, OpenTelemetry export, property-based state-machine

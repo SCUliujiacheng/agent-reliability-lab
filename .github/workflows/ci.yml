@@ -142,6 +142,36 @@ jobs:
         run: |
           docker compose up --detach --wait --no-build
 
+          curl --fail --silent --show-error \
+            --output dashboard.html \
+            http://127.0.0.1:8080/
+          asset_path="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          html = Path("dashboard.html").read_text(encoding="utf-8")
+          assets = re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)
+          assert assets, "built dashboard did not reference a hashed asset"
+          print(assets[0])
+          PY
+          )"
+          curl --fail --silent --show-error \
+            --dump-header asset-response.headers \
+            --output /dev/null \
+            "http://127.0.0.1:8080${asset_path}"
+          python3 - <<'PY'
+          from email.parser import Parser
+          from pathlib import Path
+
+          raw_headers = Path("asset-response.headers").read_text(encoding="utf-8")
+          blocks = [block for block in raw_headers.replace("\r\n", "\n").split("\n\n") if block.strip()]
+          asset_headers = Parser().parsestr("\n".join(blocks[-1].splitlines()[1:]))
+          assert asset_headers["X-Content-Type-Options"] == "nosniff"
+          assert asset_headers["Referrer-Policy"] == "no-referrer"
+          assert asset_headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+          assert asset_headers["X-Frame-Options"] == "DENY"
+          PY
+
           python3 -c 'import json; open("oversized-request.json", "w", encoding="utf-8").write(json.dumps({"scenario_id":"normal-success","mode":"resilient","x":"a" * 70_000}))'
           oversized_status="$(curl --silent --show-error \
             --dump-header oversized-response.headers \
@@ -179,6 +209,8 @@ jobs:
             http://127.0.0.1:8080/v1/runs)"
           export CREATED="$created"
           run_id="$(python3 -c 'import json, os; print(json.loads(os.environ["CREATED"])["id"])')"
+          action_step="$(python3 -c 'import json, os; print(json.loads(os.environ["CREATED"])["pending_approval"]["action_step"])')"
+          action_fingerprint="$(python3 -c 'import json, os; print(json.loads(os.environ["CREATED"])["pending_approval"]["action_fingerprint"])')"
           python3 -c 'import json, os; assert json.loads(os.environ["CREATED"])["status"] == "waiting_approval"'
 
           docker compose restart api
@@ -198,7 +230,7 @@ jobs:
           export RECONSTRUCTED="$reconstructed"
           python3 -c 'import json, os; assert json.loads(os.environ["RECONSTRUCTED"])["status"] == "waiting_approval"'
 
-          decision='{"actor":"ci-reviewer","allow":true,"reason":"compose-persistence-check"}'
+          decision="{\"actor\":\"ci-reviewer\",\"allow\":true,\"action_step\":${action_step},\"action_fingerprint\":\"${action_fingerprint}\",\"reason\":\"compose-persistence-check\"}"
           curl --fail --silent --show-error \
             --header 'Content-Type: application/json' \
             --data "$decision" \

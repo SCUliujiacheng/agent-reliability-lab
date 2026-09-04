@@ -41,17 +41,25 @@ for denominators, grader definitions, provenance, and limitations.
 - **Durable orchestration** — explicit run states, checkpoints, optimistic
   version checks, execution leases, restart-safe resume, and terminal-state
   enforcement.
+- **Bounded agent execution** — each run permits at most 64 new policy calls by
+  default (configurable from 1 to 1024). Each slot is reserved durably before
+  invocation, while tool retries remain attempts within one logical action;
+  exhaustion is persisted and traced as `action_budget_exhausted` before
+  another policy call can occur.
 - **Schema-first tool boundary** — registered tools only, strict Pydantic input
   and output validation, bounded timeouts/retries, deterministic fault injection,
   idempotency keys, and cached results.
-- **Human approval that survives reconstruction** — approval is persisted before
-  execution; duplicate same-decision requests converge, conflicting decisions
-  return a stable conflict, and the simulated write occurs once.
+- **Approval bound to the reviewed action** — the API exposes a sanitized
+  pending-action descriptor with the action step, SHA-256 fingerprint, tool
+  name, and arguments. SQLite accepts a decision atomically only while that
+  exact action is current; exact duplicates converge and stale or conflicting
+  decisions fail closed.
 - **Auditable evaluation** — six versioned scenarios, exact graders, per-case
   traces, suite/action/output hashes, evidence integrity checks, and a
   baseline-aware CI gate.
-- **Operational surface** — FastAPI with bounded requests and stable errors,
-  Typer CLI, React/TypeScript dashboard, JSON trace export, containers, and CI.
+- **Operational surface** — FastAPI with bounded requests, exact trusted hosts,
+  and stable application-route errors; Typer CLI; React/TypeScript dashboard;
+  JSON trace export; containers; and CI.
 - **Privacy-aware telemetry** — secrets and authorization fields are recursively
   redacted before persistence; the API publishes narrower trace DTOs.
 
@@ -95,6 +103,12 @@ docker compose up --build
 
 The Compose stack runs both containers as non-root users, serves the dashboard
 and `/v1` through one origin, and keeps the SQLite database in a named volume.
+
+The complete process-environment reference is in [`.env.example`](.env.example).
+The application does not load that file automatically, and Compose declares its
+own values explicitly. `ARL_TRUSTED_HOSTS` replaces the API allowlist; changing
+the dashboard hostname also requires a matching `server_name` in
+`web/nginx.conf`.
 
 ## Reproduce the benchmark
 
@@ -156,18 +170,41 @@ uv run arl export-trace <run-id> \
 # Discover the catalog
 curl http://127.0.0.1:8000/v1/scenarios
 
-# Start a durable approval scenario
-curl -X POST http://127.0.0.1:8000/v1/runs \
+# Start a durable approval scenario and keep its review descriptor
+RUN_JSON="$(curl -sS -X POST http://127.0.0.1:8000/v1/runs \
   -H "content-type: application/json" \
-  -d '{"scenario_id":"approval-reconstruction","mode":"resilient"}'
+  -d '{"scenario_id":"approval-reconstruction","mode":"resilient"}')"
+RUN_ID="$(printf '%s' "$RUN_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+ACTION_STEP="$(printf '%s' "$RUN_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["pending_approval"]["action_step"])')"
+ACTION_FINGERPRINT="$(printf '%s' "$RUN_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["pending_approval"]["action_fingerprint"])')"
 
-# Approve using the returned run ID
-curl -X POST http://127.0.0.1:8000/v1/runs/<run-id>/approvals \
+# Approve using the returned run ID and its current pending_approval descriptor
+curl -X POST "http://127.0.0.1:8000/v1/runs/$RUN_ID/approvals" \
   -H "content-type: application/json" \
-  -d '{"actor":"demo-reviewer","allow":true,"reason":"trace verified"}'
+  -d "{\"actor\":\"demo-reviewer\",\"allow\":true,\"action_step\":$ACTION_STEP,\"action_fingerprint\":\"$ACTION_FINGERPRINT\",\"reason\":\"trace verified\"}"
 
-curl "http://127.0.0.1:8000/v1/runs/<run-id>/trace?limit=100"
+curl "http://127.0.0.1:8000/v1/runs/$RUN_ID/trace?limit=100"
+
+# Run and list the same frozen evaluation used by the dashboard
+curl -X POST http://127.0.0.1:8000/v1/evaluations \
+  -H "content-type: application/json" \
+  -d '{"suite":"incident-response"}'
+
+curl "http://127.0.0.1:8000/v1/evaluations?limit=10"
 ```
+
+Copy `action_step` and `action_fingerprint` from the run's current
+`pending_approval` descriptor without recomputing them. The server accepts the
+decision only while that exact action is pending. An exact duplicate converges
+idempotently; stale, forged, or conflicting decisions return HTTP 409. Pending
+arguments are recursively sanitized before review. `actor` is a caller-supplied
+label, not an authenticated identity.
+
+Evaluation creation completes synchronously with HTTP 201, persists the report
+in SQLite, and is limited to one concurrent request per API process (the
+default local deployment runs one process). Competing requests receive HTTP 409
+with `evaluation_in_progress`. The dashboard button calls this same public API
+and replaces the displayed report with the returned result.
 
 Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
 
@@ -175,8 +212,13 @@ Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
 
 The exact benchmark intentionally does not call a model. A separate adapter can
 request one strict `AgentAction` from an OpenAI-compatible
-`/chat/completions` endpoint, with explicit connect/read deadlines and an
-environment-variable name chosen by the caller:
+`/chat/completions` endpoint. Remote URLs must use HTTPS; plaintext HTTP is
+accepted only for `localhost` or loopback-IP development. Redirects are
+disabled. The default connect and read limits are 5 and 30 seconds, with a
+45-second overall HTTP request/read deadline. Responses are bounded while
+streaming to 1 MiB by default (validated maximum: 16 MiB). The API key is loaded
+from the caller-selected environment variable and its value is included in
+trace redaction.
 
 ```python
 from agent_reliability_lab.providers.openai_compatible import (
@@ -189,13 +231,17 @@ policy = OpenAICompatiblePolicy(
         base_url="https://provider.example/v1",
         model="your-model",
         api_key_env="PROVIDER_API_KEY",
+        total_timeout_seconds=45.0,
+        max_response_bytes=1_048_576,
     )
 )
 ```
 
 This adapter is a tested library boundary, not the default CLI policy. Provider
 quality needs a separate repeated, statistical evaluation; it is not presented
-as part of the deterministic headline result.
+as part of the deterministic headline result. The adapter does not provide an
+outbound destination allowlist or network sandbox; production deployments must
+restrict egress independently.
 
 ## Verification
 
@@ -247,6 +293,10 @@ docs/           architecture, benchmark semantics, provenance, and interview gui
 - SQLite and in-process execution target a local, single-node demonstration;
   there are no database migrations or distributed workers.
 - The demo has no authentication, RBAC, tenant isolation, or secrets manager.
+- The generic `Policy` protocol does not impose a universal per-call deadline;
+  custom policies must bound their own I/O. The optional HTTP provider does have
+  a 45-second total deadline, and the action budget bounds call count, not call
+  duration.
 - Tool side effects are simulated. This is not a production incident executor.
 
 These constraints keep the project runnable by a reviewer and make each claim

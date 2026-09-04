@@ -38,6 +38,15 @@ uv run arl gate artifacts/current-report.json --baseline benchmarks/baseline-rep
 - Record state transitions before taking the next action.
 - Preserve recursive secret redaction in every stored or exported trace path.
 - Treat retries as attempts of one logical action, not extra logical tool calls.
+- Keep the policy-action budget distinct from retry attempts and preserve its
+  no-extra-policy-call boundary at exhaustion.
+- Preserve exact action-step/fingerprint approval binding, stale-target
+  rejection, and exact-duplicate convergence.
+- Keep provider redirects disabled and retain remote-HTTPS, total-deadline,
+  response-size, and credential-redaction tests.
+- Keep FastAPI and Nginx trusted-host configuration aligned.
+- Regenerate the baseline, benchmark prose, architecture receipt, and real
+  browser screenshots after claim-relevant changes.
 - Document any benchmark denominator or semantic change.
 
 ## Scenario and baseline changes
