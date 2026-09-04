@@ -6,7 +6,9 @@ from os import environ
 from pathlib import Path
 
 _CATALOG_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,127})$")
+_HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _DEFAULT_BODY_LIMIT = 64 * 1024
+_DEFAULT_TRUSTED_HOSTS = ("localhost", "127.0.0.1", "api")
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +20,7 @@ class Settings:
     scenario_dir: Path | None = None
     evaluation_suites: tuple[tuple[str, Path], ...] = ()
     cors_origins: tuple[str, ...] = ()
+    trusted_hosts: tuple[str, ...] = _DEFAULT_TRUSTED_HOSTS
     max_request_body_bytes: int = _DEFAULT_BODY_LIMIT
     secret_values: frozenset[str] = frozenset()
 
@@ -26,6 +29,16 @@ class Settings:
             raise ValueError("request body limit must be between 1 byte and 1 MiB")
         if "*" in self.cors_origins:
             raise ValueError("CORS origins must be explicit")
+        normalized_hosts = tuple(host.lower() for host in self.trusted_hosts)
+        if (
+            not normalized_hosts
+            or len(normalized_hosts) != len(set(normalized_hosts))
+            or any(not _is_exact_host(host) for host in normalized_hosts)
+        ):
+            raise ValueError(
+                "trusted hosts must be unique, exact hostnames or IPv4 addresses"
+            )
+        object.__setattr__(self, "trusted_hosts", normalized_hosts)
         names = [name for name, _ in self.evaluation_suites]
         if len(names) != len(set(names)):
             raise ValueError("evaluation suite names must be unique")
@@ -58,6 +71,12 @@ class Settings:
             for origin in environ.get("ARL_CORS_ORIGINS", "").split(",")
             if origin.strip()
         )
+        raw_trusted_hosts = environ.get("ARL_TRUSTED_HOSTS")
+        trusted_hosts = (
+            _DEFAULT_TRUSTED_HOSTS
+            if raw_trusted_hosts is None
+            else tuple(host.strip() for host in raw_trusted_hosts.split(","))
+        )
         try:
             body_limit = int(
                 environ.get("ARL_MAX_REQUEST_BODY_BYTES", str(_DEFAULT_BODY_LIMIT))
@@ -73,6 +92,7 @@ class Settings:
             scenario_dir=scenario_dir,
             evaluation_suites=((suite_name, suite_dir),),
             cors_origins=origins,
+            trusted_hosts=trusted_hosts,
             max_request_body_bytes=body_limit,
             secret_values=secrets,
         )
@@ -81,3 +101,9 @@ class Settings:
 def _resolve_path(value: str, base: Path) -> Path:
     path = Path(value).expanduser()
     return (path if path.is_absolute() else base / path).resolve()
+
+
+def _is_exact_host(host: str) -> bool:
+    if not host or host != host.strip() or len(host) > 253:
+        return False
+    return all(_HOST_LABEL.fullmatch(label) is not None for label in host.split("."))

@@ -140,11 +140,11 @@ def test_allow_deny_race_has_one_winner_and_consistent_trace(client) -> None:
 
 def test_approval_survives_app_reconstruction_exactly_once(settings) -> None:
     first_app = create_app(settings)
-    with TestClient(first_app) as first:
+    with TestClient(first_app, base_url="http://localhost") as first:
         waiting = create_run(first, "approval-reconstruction")
 
     second_app = create_app(settings)
-    with TestClient(second_app) as second:
+    with TestClient(second_app, base_url="http://localhost") as second:
         completed = _decision(second, waiting["id"], actor="reviewer", allow=True)
         repeated = _decision(second, waiting["id"], actor="reviewer", allow=True)
         assert completed.status_code == repeated.status_code == 200
@@ -154,12 +154,15 @@ def test_approval_survives_app_reconstruction_exactly_once(settings) -> None:
 
 def test_two_apps_concurrent_identical_allow_converges_with_one_audit(settings) -> None:
     seed_app = create_app(settings)
-    with TestClient(seed_app) as seed:
+    with TestClient(seed_app, base_url="http://localhost") as seed:
         waiting = create_run(seed, "approval-reconstruction")
 
     first_app = create_app(settings)
     second_app = create_app(settings)
-    with TestClient(first_app) as first, TestClient(second_app) as second:
+    with (
+        TestClient(first_app, base_url="http://localhost") as first,
+        TestClient(second_app, base_url="http://localhost") as second,
+    ):
         with ThreadPoolExecutor(max_workers=2) as pool:
             responses = [
                 pool.submit(
@@ -182,12 +185,15 @@ def test_two_apps_concurrent_identical_allow_converges_with_one_audit(settings) 
 
 def test_two_apps_allow_deny_race_has_one_durable_winner(settings) -> None:
     seed_app = create_app(settings)
-    with TestClient(seed_app) as seed:
+    with TestClient(seed_app, base_url="http://localhost") as seed:
         waiting = create_run(seed, "approval-reconstruction")
 
     first_app = create_app(settings)
     second_app = create_app(settings)
-    with TestClient(first_app) as first, TestClient(second_app) as second:
+    with (
+        TestClient(first_app, base_url="http://localhost") as first,
+        TestClient(second_app, base_url="http://localhost") as second,
+    ):
         with ThreadPoolExecutor(max_workers=2) as pool:
             allow = pool.submit(
                 _decision,

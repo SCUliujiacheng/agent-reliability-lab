@@ -44,7 +44,7 @@ def test_failed_catalog_startup_leaves_database_path_removable(
 
     with (
         pytest.raises(ValueError, match="scenario catalog is empty"),
-        TestClient(create_app(settings)),
+        TestClient(create_app(settings), base_url="http://localhost"),
     ):
         pytest.fail("an empty catalog must fail during startup")
 
@@ -73,7 +73,7 @@ def test_successful_lifespan_closes_store_exactly_once(
     monkeypatch.setattr(SQLiteRunStore, "close", counted_close)
     settings = make_settings(tmp_path / "successful-startup")
 
-    with TestClient(create_app(settings)) as api:
+    with TestClient(create_app(settings), base_url="http://localhost") as api:
         assert api.get("/health").status_code == 200
 
     assert close_count == 1
@@ -140,7 +140,7 @@ async def test_streaming_body_cannot_bypass_false_content_length(
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
+            transport=transport, base_url="http://localhost"
         ) as api:
             response = await api.post(
                 "/v1/runs",
@@ -157,7 +157,7 @@ def test_default_is_same_origin_and_allowlist_is_exact(tmp_path) -> None:
     from agent_reliability_lab.api.app import create_app
 
     default_app = create_app(make_settings(tmp_path / "default"))
-    with TestClient(default_app) as default_client:
+    with TestClient(default_app, base_url="http://localhost") as default_client:
         default = default_client.options(
             "/v1/runs",
             headers={
@@ -170,7 +170,7 @@ def test_default_is_same_origin_and_allowlist_is_exact(tmp_path) -> None:
     allowed_app = create_app(
         make_settings(tmp_path / "allowed", cors_origins=("https://dashboard.example",))
     )
-    with TestClient(allowed_app) as allowed_client:
+    with TestClient(allowed_app, base_url="http://localhost") as allowed_client:
         allowed = allowed_client.options(
             "/v1/runs",
             headers={
@@ -197,7 +197,7 @@ def test_allowed_origin_is_preserved_on_declared_oversize_error(tmp_path) -> Non
 
     origin = "https://dashboard.example"
     app = create_app(make_settings(tmp_path, cors_origins=(origin,)))
-    with TestClient(app) as api:
+    with TestClient(app, base_url="http://localhost") as api:
         response = api.post(
             "/v1/runs",
             json={
@@ -228,7 +228,7 @@ async def test_allowed_origin_is_preserved_on_streamed_oversize_error(
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
+            transport=transport, base_url="http://localhost"
         ) as api:
             response = await api.post(
                 "/v1/runs",
@@ -286,7 +286,7 @@ async def test_blocking_commands_do_not_block_health_on_same_event_loop(
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
+            transport=transport, base_url="http://localhost"
         ) as api:
             command = asyncio.create_task(api.post(path, json=payload))
             assert await asyncio.to_thread(started.wait, 1)

@@ -69,12 +69,12 @@ def test_evaluation_survives_app_reconstruction(settings, monkeypatch) -> None:
 
     monkeypatch.setattr("agent_reliability_lab.api.services.run_evaluation", fake_run)
     first_app = create_app(settings)
-    with TestClient(first_app) as first:
+    with TestClient(first_app, base_url="http://localhost") as first:
         created = first.post("/v1/evaluations", json={"suite": "incident-response"})
         assert created.status_code == 201
 
     second_app = create_app(settings)
-    with TestClient(second_app) as second:
+    with TestClient(second_app, base_url="http://localhost") as second:
         fetched = second.get(f"/v1/evaluations/{expected.evaluation_id}")
         assert fetched.status_code == 200
         assert fetched.json() == created.json()

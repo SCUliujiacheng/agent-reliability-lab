@@ -168,6 +168,8 @@ jobs:
           assert headers.get_content_type() == "application/json"
           assert headers["X-Content-Type-Options"] == "nosniff"
           assert headers["Referrer-Policy"] == "no-referrer"
+          assert headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+          assert headers["X-Frame-Options"] == "DENY"
           assert response["error"]["code"] == "request_too_large"
           PY
 

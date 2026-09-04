@@ -74,7 +74,11 @@ def app(settings: Settings) -> FastAPI:
 
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
-    with TestClient(app, raise_server_exceptions=False) as api_client:
+    with TestClient(
+        app,
+        base_url="http://localhost",
+        raise_server_exceptions=False,
+    ) as api_client:
         yield api_client
 
 

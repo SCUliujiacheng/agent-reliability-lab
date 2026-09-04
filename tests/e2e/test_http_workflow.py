@@ -98,6 +98,15 @@ def _events(client: httpx.Client, run_id: str) -> list[dict[str, Any]]:
     return list(payload["events"])
 
 
+def test_real_http_host_matching_is_case_insensitive(tmp_path: Path) -> None:
+    with _running_api(tmp_path / "host-boundary") as client:
+        allowed = client.get("/health", headers={"host": "LOCALHOST"})
+        denied = client.get("/health", headers={"host": "attacker.example"})
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 400
+
+
 def test_http_approval_workflow_survives_process_reconstruction(
     tmp_path: Path,
 ) -> None:

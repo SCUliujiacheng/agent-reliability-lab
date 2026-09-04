@@ -7,6 +7,8 @@ from uuid import UUID
 
 from fastapi import FastAPI, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from agent_reliability_lab.api.errors import (
     RequestBodyLimitMiddleware,
@@ -26,6 +28,22 @@ from agent_reliability_lab.api.schemas import (
 )
 from agent_reliability_lab.api.services import ApiContainer
 from agent_reliability_lab.config import Settings
+
+
+class _CanonicalHostMiddleware:
+    """Normalize the case-insensitive Host authority before exact validation."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] in {"http", "websocket"}:
+            scope = dict(scope)
+            scope["headers"] = [
+                (name, value.lower() if name.lower() == b"host" else value)
+                for name, value in scope["headers"]
+            ]
+        await self._app(scope, receive, send)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,6 +76,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=["Content-Type"],
         )
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=list(configured.trusted_hosts),
+        www_redirect=False,
+    )
+    app.add_middleware(_CanonicalHostMiddleware)
     install_error_handlers(app)
 
     @app.get("/health", response_model=HealthResponse)
