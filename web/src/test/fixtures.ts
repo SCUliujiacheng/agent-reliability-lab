@@ -1,10 +1,18 @@
 import type {
   EvaluationReport,
   ModeMetrics,
+  PendingApproval,
   RunSummary,
   ScenarioSummary,
   TraceEvent,
 } from "../types";
+
+export const pendingApprovalFixture: PendingApproval = {
+  action_step: 1,
+  action_fingerprint: "a".repeat(64),
+  tool_name: "prepare_rollback",
+  arguments: { deployment_id: "deploy-2026-09-04-001" },
+};
 
 export function metricFixture(overrides: Partial<ModeMetrics> = {}): ModeMetrics {
   return {

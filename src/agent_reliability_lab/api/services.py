@@ -18,6 +18,7 @@ from agent_reliability_lab.api.schemas import (
     EvaluationProvenanceResponse,
     EvaluationResponse,
     HealthResponse,
+    PendingApprovalResponse,
     RunListResponse,
     RunResponse,
     RunResultResponse,
@@ -41,6 +42,7 @@ from agent_reliability_lab.runtime.service import (
 )
 from agent_reliability_lab.scenarios.loader import load_scenario
 from agent_reliability_lab.storage.models import TraceEvent
+from agent_reliability_lab.storage.sanitization import sanitize_payload
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
 from agent_reliability_lab.tools.gateway import ToolGateway
@@ -136,19 +138,25 @@ class _RunLocks:
 
 
 class RunQueryService:
-    def __init__(self, store: SQLiteRunStore) -> None:
+    def __init__(
+        self, store: SQLiteRunStore, secret_values: frozenset[str] = frozenset()
+    ) -> None:
         self._store = store
+        self._secret_values = secret_values
 
     def get(self, run_id: UUID) -> RunResponse:
         run = self._required(run_id)
         counts = self._store.count_events_by_trace((run.trace_id,))
-        return _run_response(run, counts[run.trace_id])
+        return _run_response(run, counts[run.trace_id], self._secret_values)
 
     def list(self, *, limit: int) -> RunListResponse:
         runs = self._store.list_runs(limit=limit)
         counts = self._store.count_events_by_trace(tuple(run.trace_id for run in runs))
         return RunListResponse(
-            items=[_run_response(run, counts[run.trace_id]) for run in runs]
+            items=[
+                _run_response(run, counts[run.trace_id], self._secret_values)
+                for run in runs
+            ]
         )
 
     def trace(
@@ -201,13 +209,20 @@ class RunApplicationService:
         *,
         actor: str,
         allow: bool,
+        expected_action_step: int,
+        expected_action_fingerprint: str,
         reason: str | None,
     ) -> RunResponse:
         with self._locks.hold(run_id):
             try:
                 run = asyncio.run(
                     self._runtime().approve(
-                        run_id, actor=actor, allow=allow, reason=reason
+                        run_id,
+                        actor=actor,
+                        allow=allow,
+                        expected_action_step=expected_action_step,
+                        expected_action_fingerprint=expected_action_fingerprint,
+                        reason=reason,
                     )
                 )
             except RunNotFoundError as error:
@@ -318,7 +333,7 @@ class ApiContainer:
             settings, secret_values=set(settings.secret_values)
         )
         self.store.create_schema()
-        self.queries = RunQueryService(self.store)
+        self.queries = RunQueryService(self.store, settings.secret_values)
         self.runs = RunApplicationService(
             self.store,
             self.catalog,
@@ -332,7 +347,9 @@ class ApiContainer:
         self.health = HealthService(self.store)
 
 
-def _run_response(run: Run, attempt_count: int) -> RunResponse:
+def _run_response(
+    run: Run, attempt_count: int, secret_values: frozenset[str]
+) -> RunResponse:
     return RunResponse(
         id=run.id,
         trace_id=run.trace_id,
@@ -344,7 +361,31 @@ def _run_response(run: Run, attempt_count: int) -> RunResponse:
         duration_ms=max(0.0, (run.updated_at - run.created_at).total_seconds() * 1000),
         approval_required=run.pending_approval,
         attempt_count=attempt_count,
+        pending_approval=_pending_approval(run, secret_values),
         result=_run_result(run.result),
+    )
+
+
+def _pending_approval(
+    run: Run, secret_values: frozenset[str]
+) -> PendingApprovalResponse | None:
+    action = run.pending_action
+    fingerprint = run.pending_action_fingerprint
+    if (
+        run.status.value != "waiting_approval"
+        or not run.pending_approval
+        or action is None
+        or fingerprint is None
+    ):
+        return None
+    safe_arguments = sanitize_payload(action.arguments, set(secret_values))
+    if not isinstance(safe_arguments, dict):  # pragma: no cover - action contract.
+        raise TypeError("pending action arguments must be a JSON object")
+    return PendingApprovalResponse(
+        action_step=run.current_step,
+        action_fingerprint=fingerprint,
+        tool_name=action.tool_name,
+        arguments=safe_arguments,
     )
 
 

@@ -897,6 +897,61 @@ h2 {
   font-size: 0.82rem;
 }
 
+.approval-panel > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin: 18px 0 12px;
+}
+
+.approval-details div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.approval-details dt,
+.approval-arguments > span {
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.approval-details dd {
+  margin: 0;
+  font-weight: 750;
+}
+
+.approval-arguments pre {
+  max-width: 720px;
+  padding: 10px 12px;
+  margin: 6px 0 0;
+  overflow: auto;
+  border: 1px solid #ead7ba;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-fingerprint code {
+  overflow-wrap: anywhere;
+}
+
+.approval-panel .approval-actions {
+  flex: 0 0 auto;
+}
+
 .detail-trace {
   min-width: 0;
   padding-top: 2px;

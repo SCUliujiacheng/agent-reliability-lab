@@ -9,10 +9,17 @@ from agent_reliability_lab.api.app import create_app
 from .conftest import assert_error, create_run
 
 
-def _decision(client, run_id: str, *, actor: str, allow: bool):
+def _decision(client, waiting: dict, *, actor: str, allow: bool):
+    approval = waiting["pending_approval"]
     return client.post(
-        f"/v1/runs/{run_id}/approvals",
-        json={"actor": actor, "allow": allow, "reason": "reviewed"},
+        f"/v1/runs/{waiting['id']}/approvals",
+        json={
+            "actor": actor,
+            "allow": allow,
+            "reason": "reviewed",
+            "action_step": approval["action_step"],
+            "action_fingerprint": approval["action_fingerprint"],
+        },
     )
 
 
@@ -30,8 +37,8 @@ def test_allow_resumes_and_identical_retry_is_idempotent(client) -> None:
     waiting = create_run(client, "approval-reconstruction")
     assert waiting["status"] == "waiting_approval"
 
-    first = _decision(client, waiting["id"], actor="reviewer", allow=True)
-    repeated = _decision(client, waiting["id"], actor="reviewer", allow=True)
+    first = _decision(client, waiting, actor="reviewer", allow=True)
+    repeated = _decision(client, waiting, actor="reviewer", allow=True)
 
     assert first.status_code == repeated.status_code == 200
     assert first.json()["status"] == repeated.json()["status"] == "succeeded"
@@ -40,7 +47,7 @@ def test_allow_resumes_and_identical_retry_is_idempotent(client) -> None:
 
 def test_deny_is_terminal_and_never_executes_write(client) -> None:
     waiting = create_run(client, "approval-reconstruction")
-    denied = _decision(client, waiting["id"], actor="reviewer", allow=False)
+    denied = _decision(client, waiting, actor="reviewer", allow=False)
 
     assert denied.status_code == 200
     assert denied.json()["status"] == "failed"
@@ -51,17 +58,16 @@ def test_deny_is_terminal_and_never_executes_write(client) -> None:
 def test_conflicting_actor_or_decision_returns_stable_409(client) -> None:
     waiting = create_run(client, "approval-reconstruction")
     assert (
-        _decision(client, waiting["id"], actor="reviewer-a", allow=False).status_code
-        == 200
+        _decision(client, waiting, actor="reviewer-a", allow=False).status_code == 200
     )
 
     assert_error(
-        _decision(client, waiting["id"], actor="reviewer-b", allow=False),
+        _decision(client, waiting, actor="reviewer-b", allow=False),
         409,
         "approval_conflict",
     )
     assert_error(
-        _decision(client, waiting["id"], actor="reviewer-a", allow=True),
+        _decision(client, waiting, actor="reviewer-a", allow=True),
         409,
         "approval_conflict",
     )
@@ -83,8 +89,9 @@ def test_approval_body_uses_strict_bool_and_forbids_internal_fields(client) -> N
             json={
                 "actor": "reviewer",
                 "allow": True,
-                "action_step": 9,
-                "action_fingerprint": "0" * 64,
+                "action_step": waiting["pending_approval"]["action_step"],
+                "action_fingerprint": waiting["pending_approval"]["action_fingerprint"],
+                "idempotency_key": "internal-field",
             },
         ),
         422,
@@ -98,9 +105,7 @@ def test_two_simultaneous_allows_converge_and_write_once(client) -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(
             pool.map(
-                lambda _: _decision(
-                    client, waiting["id"], actor="same-reviewer", allow=True
-                ),
+                lambda _: _decision(client, waiting, actor="same-reviewer", allow=True),
                 range(2),
             )
         )
@@ -115,10 +120,10 @@ def test_allow_deny_race_has_one_winner_and_consistent_trace(client) -> None:
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         allow_future = pool.submit(
-            _decision, client, waiting["id"], actor="allow-reviewer", allow=True
+            _decision, client, waiting, actor="allow-reviewer", allow=True
         )
         deny_future = pool.submit(
-            _decision, client, waiting["id"], actor="deny-reviewer", allow=False
+            _decision, client, waiting, actor="deny-reviewer", allow=False
         )
         responses = [allow_future.result(), deny_future.result()]
 
@@ -145,8 +150,8 @@ def test_approval_survives_app_reconstruction_exactly_once(settings) -> None:
 
     second_app = create_app(settings)
     with TestClient(second_app, base_url="http://localhost") as second:
-        completed = _decision(second, waiting["id"], actor="reviewer", allow=True)
-        repeated = _decision(second, waiting["id"], actor="reviewer", allow=True)
+        completed = _decision(second, waiting, actor="reviewer", allow=True)
+        repeated = _decision(second, waiting, actor="reviewer", allow=True)
         assert completed.status_code == repeated.status_code == 200
         assert completed.json() == repeated.json()
         assert len(_prepare_successes(second, waiting["id"])) == 1
@@ -168,7 +173,7 @@ def test_two_apps_concurrent_identical_allow_converges_with_one_audit(settings) 
                 pool.submit(
                     _decision,
                     client,
-                    waiting["id"],
+                    waiting,
                     actor="shared-reviewer",
                     allow=True,
                 )
@@ -176,7 +181,9 @@ def test_two_apps_concurrent_identical_allow_converges_with_one_audit(settings) 
             ]
             completed = [future.result() for future in responses]
 
-        assert [response.status_code for response in completed] == [200, 200]
+        assert [response.status_code for response in completed] == [200, 200], [
+            response.text for response in completed
+        ]
         assert {response.json()["status"] for response in completed} == {"succeeded"}
         trace = first.get(f"/v1/runs/{waiting['id']}/trace?limit=100").json()["events"]
         assert sum(event["event_type"] == "approval.recorded" for event in trace) == 1
@@ -198,14 +205,14 @@ def test_two_apps_allow_deny_race_has_one_durable_winner(settings) -> None:
             allow = pool.submit(
                 _decision,
                 first,
-                waiting["id"],
+                waiting,
                 actor="allow-reviewer",
                 allow=True,
             )
             deny = pool.submit(
                 _decision,
                 second,
-                waiting["id"],
+                waiting,
                 actor="deny-reviewer",
                 allow=False,
             )

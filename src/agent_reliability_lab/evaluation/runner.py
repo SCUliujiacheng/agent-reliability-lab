@@ -340,6 +340,12 @@ async def _run_case(
             pre_pause_write_execution_count = backend.rollback_preparations
             write_execution_count = pre_pause_write_execution_count
             if run.status is RunStatus.WAITING_APPROVAL and scenario.approval_supplied:
+                if run.pending_action_fingerprint is None:
+                    raise EvaluationInfrastructureError(
+                        f"waiting run has no approval fingerprint: {scenario.id}"
+                    )
+                approval_step = run.current_step
+                approval_fingerprint = run.pending_action_fingerprint
                 approval_reconstructed = True
                 if pre_pause_write_execution_count != 0:
                     raise EvaluationInfrastructureError(
@@ -353,6 +359,8 @@ async def _run_case(
                     run.id,
                     actor="evaluation-reviewer",
                     allow=True,
+                    expected_action_step=approval_step,
+                    expected_action_fingerprint=approval_fingerprint,
                     reason="frozen suite approval",
                 )
                 write_execution_count = (
@@ -363,6 +371,8 @@ async def _run_case(
                     run.id,
                     actor="evaluation-reviewer",
                     allow=True,
+                    expected_action_step=approval_step,
+                    expected_action_fingerprint=approval_fingerprint,
                     reason="frozen suite approval",
                 )
                 total_effects = (

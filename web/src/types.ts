@@ -15,6 +15,13 @@ export interface RunResult {
   evidence_refs: string[];
 }
 
+export interface PendingApproval {
+  action_step: number;
+  action_fingerprint: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface RunSummary {
   id: string;
   trace_id: string;
@@ -26,6 +33,7 @@ export interface RunSummary {
   duration_ms: number;
   approval_required: boolean;
   attempt_count: number;
+  pending_approval?: PendingApproval;
   result?: RunResult;
 }
 
@@ -160,5 +168,7 @@ export type LoadState = "loading" | "ready" | "error";
 export interface ApprovalInput {
   actor: string;
   allow: boolean;
+  action_step: number;
+  action_fingerprint: string;
   reason?: string;
 }

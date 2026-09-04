@@ -1,4 +1,4 @@
-import type { LoadState, RunSummary, TraceEvent } from "../types";
+import type { LoadState, PendingApproval, RunSummary, TraceEvent } from "../types";
 import { StatusMark } from "./StatusMark";
 import { TraceWaterfall } from "./TraceWaterfall";
 
@@ -11,7 +11,7 @@ interface RunDetailProps {
   mutationState: MutationState;
   onBack: () => void;
   onRunAgain: () => void;
-  onApprove: (allow: boolean) => void;
+  onApprove: (approval: PendingApproval, allow: boolean) => void;
 }
 
 function formatDuration(value: number): string {
@@ -41,6 +41,7 @@ export function RunDetail({
 }: RunDetailProps) {
   const outcome = run.result?.outcome ?? (run.status === "waiting_approval" ? "Pending review" : "Not available");
   const pending = mutationState === "pending" || state === "loading";
+  const approval = run.pending_approval;
 
   return (
     <main className="detail-page" id="runs">
@@ -70,16 +71,27 @@ export function RunDetail({
         <div><dt>Duration</dt><dd>{formatDuration(run.duration_ms)}</dd></div>
       </dl>
 
-      {run.status === "waiting_approval" && run.approval_required ? (
+      {run.status === "waiting_approval" && run.approval_required && approval ? (
         <section className="approval-panel" aria-labelledby="approval-title">
           <div>
             <p className="eyebrow">Human checkpoint</p>
             <h2 id="approval-title">Action awaiting approval</h2>
-            <p>Review the trace before allowing the pending side effect.</p>
+            <p>Review this exact side effect before recording a decision.</p>
+            <dl className="approval-details">
+              <div><dt>Tool</dt><dd><code>{approval.tool_name}</code></dd></div>
+              <div><dt>Action</dt><dd>Step {approval.action_step}</dd></div>
+            </dl>
+            <div className="approval-arguments">
+              <span>Arguments</span>
+              <pre>{JSON.stringify(approval.arguments, null, 2)}</pre>
+            </div>
+            <p className="approval-fingerprint">
+              Fingerprint <code>{approval.action_fingerprint}</code>
+            </p>
           </div>
           <div className="approval-actions">
-            <button type="button" className="danger-button" disabled={pending} onClick={() => onApprove(false)}>Deny action</button>
-            <button type="button" className="primary-button" disabled={pending} onClick={() => onApprove(true)}>Allow action</button>
+            <button type="button" className="danger-button" disabled={pending} onClick={() => onApprove(approval, false)}>Deny action</button>
+            <button type="button" className="primary-button" disabled={pending} onClick={() => onApprove(approval, true)}>Allow action</button>
           </div>
         </section>
       ) : null}

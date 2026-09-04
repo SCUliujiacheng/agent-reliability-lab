@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { RunDetail } from "./RunDetail";
-import { runFixture, traceFixture } from "../test/fixtures";
+import { pendingApprovalFixture, runFixture, traceFixture } from "../test/fixtures";
 
 describe("RunDetail", () => {
   it("keeps mobile summary facts, status text, trace, and actions semantic", async () => {
@@ -34,7 +34,9 @@ describe("RunDetail", () => {
     expect(onRunAgain).toHaveBeenCalledOnce();
   });
 
-  it("exposes allow and deny only for a real waiting state", () => {
+  it("shows the exact reviewed action and submits that identity with the decision", async () => {
+    const onApprove = vi.fn();
+    const user = userEvent.setup();
     const { rerender } = render(
       <RunDetail
         run={runFixture()}
@@ -43,28 +45,41 @@ describe("RunDetail", () => {
         mutationState="idle"
         onBack={vi.fn()}
         onRunAgain={vi.fn()}
-        onApprove={vi.fn()}
+        onApprove={onApprove}
       />,
     );
     expect(screen.queryByRole("button", { name: "Allow action" })).not.toBeInTheDocument();
 
     rerender(
       <RunDetail
-        run={runFixture({ status: "waiting_approval", approval_required: true })}
+        run={runFixture({
+          status: "waiting_approval",
+          approval_required: true,
+          pending_approval: pendingApprovalFixture,
+        })}
         events={[]}
         state="ready"
         mutationState="idle"
         onBack={vi.fn()}
         onRunAgain={vi.fn()}
-        onApprove={vi.fn()}
+        onApprove={onApprove}
       />,
     );
+    expect(screen.getByText("prepare_rollback")).toBeVisible();
+    expect(screen.getByText("Step 1")).toBeVisible();
+    expect(screen.getByText(/deploy-2026-09-04-001/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Allow action" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Deny action" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Allow action" }));
+    expect(onApprove).toHaveBeenCalledWith(pendingApprovalFixture, true);
 
     rerender(
       <RunDetail
-        run={runFixture({ status: "waiting_approval", approval_required: true })}
+        run={runFixture({
+          status: "waiting_approval",
+          approval_required: true,
+          pending_approval: pendingApprovalFixture,
+        })}
         events={[]}
         state="loading"
         mutationState="error"

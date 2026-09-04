@@ -106,7 +106,13 @@ async def test_approval_executes_persisted_action_not_requeried_policy(
     reconstructed, backend = service_at(
         path, scenarios, policies={"branch": BranchingPolicy("deploy-B")}
     )
-    completed = await reconstructed.approve(waiting.id, actor="reviewer", allow=True)
+    completed = await reconstructed.approve(
+        waiting.id,
+        actor="reviewer",
+        allow=True,
+        expected_action_step=waiting.current_step,
+        expected_action_fingerprint=waiting.pending_action_fingerprint,
+    )
 
     assert completed.status is RunStatus.SUCCEEDED
     assert completed.context["tool_results"]["0"]["deployment_id"] == "deploy-A"
@@ -138,7 +144,13 @@ async def test_same_approval_retries_after_record_before_resume_crash(
     reconstructed, backend = service_at(
         path, scenarios, policies={"branch": BranchingPolicy("deploy-B")}
     )
-    completed = await reconstructed.approve(waiting.id, actor="reviewer", allow=True)
+    completed = await reconstructed.approve(
+        waiting.id,
+        actor="reviewer",
+        allow=True,
+        expected_action_step=waiting.current_step,
+        expected_action_fingerprint=waiting.pending_action_fingerprint,
+    )
 
     assert completed.status is RunStatus.SUCCEEDED
     assert backend.rollback_preparations == 1
@@ -311,7 +323,14 @@ async def test_standard_function_write_gets_stable_key_and_passes_preflight(
         assert waiting.pending_action is not None
         assert waiting.pending_action.idempotency_key
 
-        completed = await service.approve(waiting.id, actor="reviewer", allow=True)
+        assert waiting.pending_action_fingerprint is not None
+        completed = await service.approve(
+            waiting.id,
+            actor="reviewer",
+            allow=True,
+            expected_action_step=waiting.current_step,
+            expected_action_fingerprint=waiting.pending_action_fingerprint,
+        )
 
     assert completed.status is RunStatus.SUCCEEDED
     assert backend.rollback_preparations == 1
@@ -388,12 +407,25 @@ async def test_run_transitions_and_rejected_operations_are_traced(
 ) -> None:
     """Missing accepted/rejected state events prevents operational audit."""
     waiting = await app_context.runs.start("rollback-approval", "resilient")
-    completed = await app_context.runs.approve(waiting.id, actor="reviewer", allow=True)
+    assert waiting.pending_action_fingerprint is not None
+    completed = await app_context.runs.approve(
+        waiting.id,
+        actor="reviewer",
+        allow=True,
+        expected_action_step=waiting.current_step,
+        expected_action_fingerprint=waiting.pending_action_fingerprint,
+    )
 
     with pytest.raises(RunConflictError):
         await app_context.runs.resume(completed.id)
     with pytest.raises(ValueError, match="conflict"):
-        await app_context.runs.approve(completed.id, actor="reviewer", allow=False)
+        await app_context.runs.approve(
+            completed.id,
+            actor="reviewer",
+            allow=False,
+            expected_action_step=waiting.current_step,
+            expected_action_fingerprint=waiting.pending_action_fingerprint,
+        )
 
     events = app_context.runs.store.list_events(completed.trace_id)
     event_types = [event.event_type for event in events]

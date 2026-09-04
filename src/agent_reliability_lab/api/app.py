@@ -151,6 +151,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             run_id,
             actor=body.actor,
             allow=body.allow,
+            expected_action_step=body.action_step,
+            expected_action_fingerprint=body.action_fingerprint,
             reason=body.reason,
         )
 

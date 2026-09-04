@@ -47,13 +47,21 @@ describe("typed API client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await approveRun("run-id", { actor: "dashboard-reviewer", allow: false, reason: "unsafe" });
+    await approveRun("run-id", {
+      actor: "dashboard-reviewer",
+      allow: false,
+      reason: "unsafe",
+      action_step: 3,
+      action_fingerprint: "a".repeat(64),
+    });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({
       actor: "dashboard-reviewer",
       allow: false,
       reason: "unsafe",
+      action_step: 3,
+      action_fingerprint: "a".repeat(64),
     });
     expect(ApiClientError).toBeDefined();
   });

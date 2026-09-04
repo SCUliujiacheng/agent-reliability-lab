@@ -5,6 +5,7 @@ import axe from "axe-core";
 import { App } from "./App";
 import {
   evaluationFixture,
+  pendingApprovalFixture,
   runFixture,
   scenarioFixture,
   traceFixture,
@@ -100,12 +101,14 @@ describe("App workflows", () => {
       scenario_id: "approval-reconstruction",
       status: "waiting_approval",
       approval_required: true,
+      pending_approval: pendingApprovalFixture,
       result: undefined,
     });
     const completed = runFixture({
       ...waiting,
       status: "succeeded",
       approval_required: false,
+      pending_approval: undefined,
       result: { outcome: "prepared", evidence_refs: [] },
     });
     let approvalRecorded = false;
@@ -126,6 +129,13 @@ describe("App workflows", () => {
       if (url === "/v1/runs" && init?.method === "POST") return response(waiting, 201);
       if (url === `/v1/runs/${waiting.id}` && !init?.method) return response(waiting);
       if (url.endsWith("/approvals") && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({
+          actor: "dashboard-reviewer",
+          allow: true,
+          reason: "Approved in reliability dashboard",
+          action_step: pendingApprovalFixture.action_step,
+          action_fingerprint: pendingApprovalFixture.action_fingerprint,
+        });
         approvalRecorded = true;
         return response(completed);
       }
@@ -155,12 +165,14 @@ describe("App workflows", () => {
       scenario_id: "approval-reconstruction",
       status: "waiting_approval",
       approval_required: true,
+      pending_approval: pendingApprovalFixture,
       result: undefined,
     });
     const completed = runFixture({
       ...waiting,
       status: "succeeded",
       approval_required: false,
+      pending_approval: undefined,
       result: { outcome: "prepared", evidence_refs: [] },
     });
     const approval = deferred<Response>();
@@ -199,12 +211,14 @@ describe("App workflows", () => {
       scenario_id: "approval-reconstruction",
       status: "waiting_approval",
       approval_required: true,
+      pending_approval: pendingApprovalFixture,
       result: undefined,
     });
     const completed = runFixture({
       ...waiting,
       status: "succeeded",
       approval_required: false,
+      pending_approval: undefined,
       result: { outcome: "prepared", evidence_refs: [] },
     });
     const base = overviewFetch({ runs: [waiting], evaluation: null });
@@ -243,6 +257,7 @@ describe("App workflows", () => {
       scenario_id: "approval-reconstruction",
       status: "waiting_approval",
       approval_required: true,
+      pending_approval: pendingApprovalFixture,
       result: undefined,
     });
     let approvalCalls = 0;
@@ -319,12 +334,14 @@ describe("App workflows", () => {
       scenario_id: "approval-a",
       status: "waiting_approval",
       approval_required: true,
+      pending_approval: pendingApprovalFixture,
       result: undefined,
     });
     const completedA = runFixture({
       ...runA,
       status: "succeeded",
       approval_required: false,
+      pending_approval: undefined,
       result: { outcome: "prepared", evidence_refs: [] },
     });
     const runB = runFixture({

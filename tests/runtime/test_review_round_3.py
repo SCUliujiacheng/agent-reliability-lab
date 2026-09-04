@@ -154,4 +154,11 @@ async def test_arbitrary_release_failure_does_not_mask_denial_primary_error(
     )
 
     with pytest.raises(PrimaryExecutionError, match="denial audit failed"):
-        await app_context.runs.approve(waiting.id, actor="reviewer", allow=False)
+        assert waiting.pending_action_fingerprint is not None
+        await app_context.runs.approve(
+            waiting.id,
+            actor="reviewer",
+            allow=False,
+            expected_action_step=waiting.current_step,
+            expected_action_fingerprint=waiting.pending_action_fingerprint,
+        )

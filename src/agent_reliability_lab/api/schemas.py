@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool
 
 from agent_reliability_lab.domain.runs import RunStatus
 from agent_reliability_lab.evaluation.models import ModeComparison, ModeMetrics
@@ -24,6 +24,8 @@ class RunCreateRequest(StrictRequest):
 class ApprovalRequest(StrictRequest):
     actor: str = Field(min_length=1, max_length=128)
     allow: StrictBool
+    action_step: int = Field(ge=0)
+    action_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     reason: str | None = Field(default=None, max_length=500)
 
 
@@ -42,6 +44,15 @@ class RunResultResponse(BaseModel):
     evidence_refs: tuple[str, ...] = ()
 
 
+class PendingApprovalResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_step: int = Field(ge=0)
+    action_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tool_name: str = Field(min_length=1, max_length=128)
+    arguments: dict[str, JsonValue]
+
+
 class RunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -55,6 +66,7 @@ class RunResponse(BaseModel):
     duration_ms: float
     approval_required: bool
     attempt_count: int = Field(ge=0)
+    pending_approval: PendingApprovalResponse | None = None
     result: RunResultResponse | None = None
 
 

@@ -1,8 +1,25 @@
 """Approval pause and process-reconstruction behavior."""
 
+from typing import TypedDict
+
 import pytest
 
-from agent_reliability_lab.domain.runs import RunStatus
+from agent_reliability_lab.domain.actions import CallToolAction, FinishAction
+from agent_reliability_lab.domain.runs import Run, RunStatus
+from agent_reliability_lab.domain.scenarios import Scenario
+
+
+class _ApprovalTarget(TypedDict):
+    expected_action_step: int
+    expected_action_fingerprint: str
+
+
+def _target(run: Run) -> _ApprovalTarget:
+    assert run.pending_action_fingerprint is not None
+    return {
+        "expected_action_step": run.current_step,
+        "expected_action_fingerprint": run.pending_action_fingerprint,
+    }
 
 
 @pytest.mark.asyncio
@@ -14,11 +31,15 @@ async def test_approval_run_reconstructs_and_resumes_exactly_once(
     assert run.status is RunStatus.WAITING_APPROVAL
 
     reconstructed = app_context.reconstruct()
-    completed = await reconstructed.runs.approve(run.id, actor="reviewer", allow=True)
+    completed = await reconstructed.runs.approve(
+        run.id, actor="reviewer", allow=True, **_target(run)
+    )
     assert completed.status is RunStatus.SUCCEEDED
     assert reconstructed.backend.rollback_preparations == 1
 
-    repeated = await reconstructed.runs.approve(run.id, actor="reviewer", allow=True)
+    repeated = await reconstructed.runs.approve(
+        run.id, actor="reviewer", allow=True, **_target(run)
+    )
     assert repeated == completed
     recorded = [
         event
@@ -28,7 +49,9 @@ async def test_approval_run_reconstructs_and_resumes_exactly_once(
     assert len(recorded) == 1
 
     with pytest.raises(ValueError, match="conflict"):
-        await reconstructed.runs.approve(run.id, actor="other", allow=True)
+        await reconstructed.runs.approve(
+            run.id, actor="other", allow=True, **_target(run)
+        )
     assert reconstructed.backend.rollback_preparations == 1
 
 
@@ -40,7 +63,11 @@ async def test_denied_approval_terminates_without_executing_write(
     waiting = await app_context.runs.start("rollback-approval", "resilient")
 
     denied = await app_context.runs.approve(
-        waiting.id, actor="reviewer", allow=False, reason="unsafe"
+        waiting.id,
+        actor="reviewer",
+        allow=False,
+        reason="unsafe",
+        **_target(waiting),
     )
 
     assert denied.status is RunStatus.FAILED
@@ -68,4 +95,63 @@ async def test_denied_approval_terminates_without_executing_write(
     assert not any(
         event.event_type.startswith("tool.attempt.")
         for event in events[denied_index + 1 :]
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_for_reviewed_action_a_never_approves_later_action_b(
+    app_context: object,
+) -> None:
+    """Rebinding a stale A decision to the current B action must fail this test."""
+    app_context.scenarios["two-approvals"] = Scenario(
+        id="two-approvals",
+        version=1,
+        actions=(
+            CallToolAction(
+                tool_name="prepare_rollback",
+                arguments={"deployment_id": "deploy-A"},
+                idempotency_key="prepare-A",
+            ),
+            CallToolAction(
+                tool_name="prepare_rollback",
+                arguments={"deployment_id": "deploy-B"},
+                idempotency_key="prepare-B",
+            ),
+            FinishAction(summary="Both reviewed", outcome="prepared"),
+        ),
+        expected_tool_sequence=("prepare_rollback", "prepare_rollback"),
+        expected_outcome="prepared",
+    )
+    reviewed_a = await app_context.runs.start("two-approvals", "resilient")
+    assert reviewed_a.pending_action_fingerprint is not None
+
+    waiting_b = await app_context.runs.approve(
+        reviewed_a.id,
+        actor="reviewer",
+        allow=True,
+        expected_action_step=reviewed_a.current_step,
+        expected_action_fingerprint=reviewed_a.pending_action_fingerprint,
+    )
+    assert waiting_b.status is RunStatus.WAITING_APPROVAL
+    assert waiting_b.current_step == reviewed_a.current_step + 1
+    assert waiting_b.pending_action_fingerprint != reviewed_a.pending_action_fingerprint
+    assert app_context.backend.rollback_preparations == 1
+
+    stale_retry = await app_context.runs.approve(
+        reviewed_a.id,
+        actor="reviewer",
+        allow=True,
+        expected_action_step=reviewed_a.current_step,
+        expected_action_fingerprint=reviewed_a.pending_action_fingerprint,
+    )
+
+    assert stale_retry == waiting_b
+    assert app_context.backend.rollback_preparations == 1
+    assert (
+        app_context.runs.store.get_approval(
+            reviewed_a.id,
+            action_step=waiting_b.current_step,
+            action_fingerprint=waiting_b.pending_action_fingerprint,
+        )
+        is None
     )

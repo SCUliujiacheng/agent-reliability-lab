@@ -8,7 +8,7 @@ import { Overview } from "./components/Overview";
 import { RunDetail, type MutationState } from "./components/RunDetail";
 import { useOverview } from "./hooks/useOverview";
 import { useRunDetail } from "./hooks/useRunDetail";
-import type { RunMode } from "./types";
+import type { PendingApproval, RunMode } from "./types";
 
 function Dashboard() {
   const overview = useOverview();
@@ -59,11 +59,11 @@ function Dashboard() {
     }
   };
 
-  const approve = async (allow: boolean) => {
+  const approve = async (approval: PendingApproval, allow: boolean) => {
     if (selectedRunId === null) return;
     const approvalRunId = selectedRunId;
     const approvalGeneration = selectionGeneration.current;
-    const approvalKey = `${approvalRunId}:${approvalGeneration}`;
+    const approvalKey = `${approvalRunId}:${approvalGeneration}:${approval.action_step}:${approval.action_fingerprint}`;
     if (approvalsInFlight.current.has(approvalKey)) return;
     approvalsInFlight.current.add(approvalKey);
     const isCurrentSelection = () =>
@@ -75,6 +75,8 @@ function Dashboard() {
       const run = await approveRun(approvalRunId, {
         actor: "dashboard-reviewer",
         allow,
+        action_step: approval.action_step,
+        action_fingerprint: approval.action_fingerprint,
         reason: allow ? "Approved in reliability dashboard" : "Denied in reliability dashboard",
       });
       if (!isCurrentSelection()) return;
@@ -118,7 +120,7 @@ function Dashboard() {
               overview.refresh();
             }}
             onRunAgain={() => void startRun(detail.run!.scenario_id, detail.run!.mode)}
-            onApprove={(allow) => void approve(allow)}
+            onApprove={(approval, allow) => void approve(approval, allow)}
           />
         ) : selectedRunId !== null && detail.state === "error" ? (
           <main className="detail-load-state" role="alert">

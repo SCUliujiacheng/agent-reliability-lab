@@ -12,7 +12,14 @@ async def test_resume_rejects_terminal_and_currently_running_runs(
 ) -> None:
     """Permitting terminal or live-run resume would fork state-machine ownership."""
     waiting = await app_context.runs.start("rollback-approval", "resilient")
-    completed = await app_context.runs.approve(waiting.id, actor="reviewer", allow=True)
+    assert waiting.pending_action_fingerprint is not None
+    completed = await app_context.runs.approve(
+        waiting.id,
+        actor="reviewer",
+        allow=True,
+        expected_action_step=waiting.current_step,
+        expected_action_fingerprint=waiting.pending_action_fingerprint,
+    )
     assert completed.status is RunStatus.SUCCEEDED
 
     with pytest.raises(RunConflictError, match="terminal"):

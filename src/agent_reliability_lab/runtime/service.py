@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Literal, cast
+from typing import Literal
 from uuid import UUID, uuid4
 
 from agent_reliability_lab.domain.runs import Run, RunStatus
@@ -108,27 +108,18 @@ class RunService:
         *,
         actor: str,
         allow: bool,
+        expected_action_step: int,
+        expected_action_fingerprint: str,
         reason: str | None = None,
     ) -> Run:
         run = self._required(run_id)
-        latest = self.store.get_latest_approval(run_id)
-        if run.pending_action_fingerprint is not None:
-            action_step = run.current_step
-            fingerprint = run.pending_action_fingerprint
-        elif latest is not None:
-            action_step = cast(int, latest["action_step"])
-            fingerprint = cast(str, latest["action_fingerprint"])
-        else:
-            self._rejected(run, "approval.rejected", "not_waiting")
-            raise RunConflictError("run is not waiting for approval")
-
         try:
-            decision = self.store.record_approval(
+            decision = self.store.record_pending_approval(
                 run_id,
                 actor=actor,
                 allow=allow,
-                action_step=action_step,
-                action_fingerprint=fingerprint,
+                action_step=expected_action_step,
+                action_fingerprint=expected_action_fingerprint,
                 reason=reason,
             )
         except ValueError as error:
@@ -137,6 +128,16 @@ class RunService:
         run = self._required(run_id)
         if run.status in {RunStatus.SUCCEEDED, RunStatus.FAILED}:
             return run
+        if (
+            run.current_step != expected_action_step
+            or run.pending_action_fingerprint != expected_action_fingerprint
+        ):
+            if run.current_step > expected_action_step:
+                return await self._await_approval_completion(
+                    run_id, action_step=expected_action_step
+                )
+            self._rejected(run, "approval.rejected", "target_mismatch")
+            raise ValueError("approval target does not match the pending action")
 
         if run.status not in {RunStatus.WAITING_APPROVAL, RunStatus.RUNNING}:
             self._rejected(run, "approval.rejected", "not_waiting")
@@ -150,7 +151,7 @@ class RunService:
             )
         except (ConcurrentUpdateError, RunExecutionConflictError):
             return await self._await_approval_completion(
-                run_id, action_step=action_step
+                run_id, action_step=expected_action_step
             )
 
     def get(self, run_id: UUID) -> Run:

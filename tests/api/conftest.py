@@ -21,7 +21,6 @@ FORBIDDEN_HTTP_KEYS = {
     "version",
     "pending_action",
     "pending_action_fingerprint",
-    "action_fingerprint",
     "idempotency_key",
 }
 

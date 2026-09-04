@@ -19,6 +19,7 @@ from sqlalchemy import (
     delete,
     event,
     func,
+    literal,
     or_,
     select,
     update,
@@ -757,6 +758,48 @@ class SQLiteRunStore:
         reason: str | None = None,
     ) -> dict[str, object]:
         """Atomically persist one decision and its single trace audit event."""
+        return self._record_approval(
+            run_id,
+            actor=actor,
+            allow=allow,
+            action_step=action_step,
+            action_fingerprint=action_fingerprint,
+            reason=reason,
+            require_current_pending_action=False,
+        )
+
+    def record_pending_approval(
+        self,
+        run_id: UUID,
+        *,
+        actor: str,
+        allow: bool,
+        action_step: int,
+        action_fingerprint: str,
+        reason: str | None = None,
+    ) -> dict[str, object]:
+        """Bind a decision to the exact pending action in one write transaction."""
+        return self._record_approval(
+            run_id,
+            actor=actor,
+            allow=allow,
+            action_step=action_step,
+            action_fingerprint=action_fingerprint,
+            reason=reason,
+            require_current_pending_action=True,
+        )
+
+    def _record_approval(
+        self,
+        run_id: UUID,
+        *,
+        actor: str,
+        allow: bool,
+        action_step: int,
+        action_fingerprint: str,
+        reason: str | None,
+        require_current_pending_action: bool,
+    ) -> dict[str, object]:
         if action_step < 0:
             raise ValueError("approval action_step must not be negative")
         if len(action_fingerprint) != 64 or any(
@@ -765,9 +808,43 @@ class SQLiteRunStore:
             raise ValueError("approval action fingerprint must be canonical SHA-256")
         now = self._aware_now()
         with self._session.begin() as session:
-            result = cast(
-                CursorResult[Any],
-                session.execute(
+            if require_current_pending_action:
+                statement = insert(ApprovalRow).from_select(
+                    [
+                        "run_id",
+                        "action_step",
+                        "action_fingerprint",
+                        "actor",
+                        "allow",
+                        "reason",
+                        "recorded_at",
+                    ],
+                    select(
+                        literal(str(run_id)),
+                        literal(action_step),
+                        literal(action_fingerprint),
+                        literal(actor),
+                        literal(allow),
+                        literal(reason),
+                        literal(now.isoformat()),
+                    )
+                    .select_from(RunRow)
+                    .where(
+                        RunRow.id == str(run_id),
+                        func.json_extract(RunRow.payload, "$.status")
+                        == "waiting_approval",
+                        func.json_extract(RunRow.payload, "$.pending_approval") == 1,
+                        func.json_extract(RunRow.payload, "$.current_step")
+                        == action_step,
+                        func.json_extract(
+                            RunRow.payload, "$.pending_action_fingerprint"
+                        )
+                        == action_fingerprint,
+                    ),
+                )
+                statement = statement.on_conflict_do_nothing()
+            else:
+                statement = (
                     insert(ApprovalRow)
                     .values(
                         run_id=str(run_id),
@@ -779,14 +856,22 @@ class SQLiteRunStore:
                         recorded_at=now.isoformat(),
                     )
                     .on_conflict_do_nothing()
-                ),
+                )
+            result = cast(
+                CursorResult[Any],
+                session.execute(statement),
             )
             row = session.get(ApprovalRow, (str(run_id), action_step))
             if row is None:
+                if require_current_pending_action:
+                    raise ValueError(
+                        "approval target is not the current pending action"
+                    )
                 raise RuntimeError("approval insert was not visible")
             if result.rowcount != 1 and (
                 row.actor != actor
                 or row.allow is not allow
+                or row.reason != reason
                 or row.action_fingerprint != action_fingerprint
             ):
                 raise ValueError("approval decision conflict")

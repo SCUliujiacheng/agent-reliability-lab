@@ -131,6 +131,8 @@ def test_http_approval_workflow_survives_process_reconstruction(
         "actor": "demo-reviewer",
         "allow": True,
         "reason": "verified",
+        "action_step": waiting["pending_approval"]["action_step"],
+        "action_fingerprint": waiting["pending_approval"]["action_fingerprint"],
     }
     with _running_api(data_dir) as second, _running_api(data_dir) as competing:
         reconstructed = second.get(f"/v1/runs/{waiting['id']}")

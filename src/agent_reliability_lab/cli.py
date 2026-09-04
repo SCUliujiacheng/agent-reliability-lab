@@ -41,8 +41,18 @@ def run_command(
         service = _persistent_service(database, scenario)
         run = asyncio.run(service.start(scenario.id, mode))  # type: ignore[arg-type]
         if run.pending_approval and scenario.approval_supplied:
+            if run.pending_action_fingerprint is None:
+                raise RuntimeError("waiting run has no approval fingerprint")
             service = _persistent_service(database, scenario)
-            run = asyncio.run(service.approve(run.id, actor="cli-reviewer", allow=True))
+            run = asyncio.run(
+                service.approve(
+                    run.id,
+                    actor="cli-reviewer",
+                    allow=True,
+                    expected_action_step=run.current_step,
+                    expected_action_fingerprint=run.pending_action_fingerprint,
+                )
+            )
         payload = {
             "run_id": str(run.id),
             "trace_id": str(run.trace_id),
