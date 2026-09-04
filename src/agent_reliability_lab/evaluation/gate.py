@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from fractions import Fraction
@@ -44,14 +45,17 @@ _FAULT_FAILURE = {
     "tool_error": ("tool_error", True),
     "malformed_output": ("invalid_output", False),
 }
+_GIT_SHA1_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 
 
 def enforce_gate(
     report: EvaluationReport, baseline: EvaluationReport | None = None
 ) -> GateResult:
     """Recompute evidence and enforce fixed resilient and regression thresholds."""
-    report_errors = _integrity_errors(report)
-    baseline_errors = _integrity_errors(baseline) if baseline is not None else ()
+    report_errors = _integrity_errors(report, source="report")
+    baseline_errors = (
+        _integrity_errors(baseline, source="baseline") if baseline is not None else ()
+    )
     integrity_errors = tuple(dict.fromkeys((*report_errors, *baseline_errors)))
     if integrity_errors:
         return GateResult(
@@ -110,8 +114,14 @@ def _fraction(numerator: int, denominator: int) -> Fraction:
     return Fraction(numerator, denominator) if denominator else Fraction()
 
 
-def _integrity_errors(report: EvaluationReport) -> tuple[str, ...]:
+def _integrity_errors(
+    report: EvaluationReport, *, source: str = "report"
+) -> tuple[str, ...]:
     errors: list[str] = []
+    if _GIT_SHA1_PATTERN.fullmatch(report.provenance.git_revision) is None:
+        errors.append(f"{source}_git_revision_invalid")
+    if report.provenance.git_dirty is not False:
+        errors.append(f"{source}_git_worktree_dirty")
     if set(report.modes) != {"fragile", "resilient"}:
         errors.append("mode_set_mismatch")
         return tuple(errors)

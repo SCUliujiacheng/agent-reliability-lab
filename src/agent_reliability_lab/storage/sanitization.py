@@ -15,6 +15,16 @@ _SENSITIVE_KEYS = {
     "token",
     "xapikey",
 }
+_SENSITIVE_KEY_SUFFIXES = (
+    "authorization",
+    "apikey",
+    "credential",
+    "credentials",
+    "password",
+    "privatekey",
+    "secret",
+    "token",
+)
 
 
 def sanitize_payload(value: JsonValue, secret_values: set[str]) -> JsonValue:
@@ -26,7 +36,7 @@ def _sanitize(value: Any, secret_values: set[str]) -> JsonValue:
     if isinstance(value, Mapping):
         return {
             str(key): _REDACTED
-            if _normalize_key(str(key)) in _SENSITIVE_KEYS
+            if _is_sensitive_key(str(key))
             else _sanitize(item, secret_values)
             for key, item in value.items()
         }
@@ -44,3 +54,8 @@ def _sanitize(value: Any, secret_values: set[str]) -> JsonValue:
 
 def _normalize_key(key: str) -> str:
     return "".join(character for character in key.lower() if character.isalnum())
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = _normalize_key(key)
+    return normalized in _SENSITIVE_KEYS or normalized.endswith(_SENSITIVE_KEY_SUFFIXES)

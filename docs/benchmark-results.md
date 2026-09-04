@@ -81,8 +81,10 @@ uv run arl gate artifacts/current-report.json --baseline benchmarks/baseline-rep
 
 The gate recomputes summaries from case and trace evidence before applying
 thresholds. It fails closed for altered suite identity, duplicate evidence IDs,
-non-comparable baselines, mismatched summaries, fabricated recovery, changed
-tool outputs, or malformed report structure.
+non-comparable baselines, malformed or dirty Git provenance, mismatched
+summaries, fabricated recovery, changed tool outputs, or malformed report
+structure. Baseline and current revisions can differ, but both must be full
+lowercase 40-character revisions produced from clean worktrees.
 
 Baseline provenance:
 

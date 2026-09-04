@@ -45,6 +45,12 @@ trust the report's headline metrics; it reconstructs them from cases and ordered
 trace evidence, validates trace and scenario identities, and rejects
 incomparable or internally inconsistent inputs.
 
+Both the current report and an optional baseline must identify a full lowercase
+40-character Git revision and record `git_dirty: false`. Their revisions may
+differ because a baseline is expected to predate the implementation under test.
+This validates a clean, well-formed provenance claim; repository history and CI
+remain responsible for retaining and authenticating the referenced commits.
+
 ## Runtime evidence
 
 Every run receives distinct run and trace UUIDs. Events have monotonically
@@ -56,9 +62,11 @@ increasing sequence numbers and retain the minimum payload needed to explain:
 - approval decisions;
 - terminal success or failure.
 
-Stored and exported payloads pass through recursive redaction. Authorization
-fields and configured secret values are replaced before persistence, and the
-API exposes a deliberately narrower trace DTO than the internal event model.
+Stored and exported payloads pass through recursive redaction. Authorization,
+token, secret, password, private-key, API-key, and credential field variants,
+plus configured secret values, are replaced before persistence. Metric names
+such as `prompt_tokens` and `token_count` remain available. The API exposes a
+deliberately narrower trace DTO than the internal event model.
 
 ## Reproduction contract
 

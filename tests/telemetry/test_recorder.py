@@ -100,3 +100,37 @@ def test_redaction_ignores_empty_secrets_and_replaces_overlap_longest_first() ->
     clean = sanitize_payload({"message": "abcabc"}, {"", "abc", "abcabc"})
 
     assert clean == {"message": "[REDACTED]"}
+
+
+def test_redaction_covers_compound_credentials_without_hiding_metrics() -> None:
+    """Missing compound credentials or broad substring matching must fail."""
+    clean = sanitize_payload(
+        {
+            "access_token": "access-value",
+            "refresh-token": "refresh-value",
+            "oauthClientSecret": "client-value",
+            "database_password": "password-value",
+            "signing_private_key": "private-key-value",
+            "metrics": {
+                "access_token_count": 3,
+                "refresh_token_latency_ms": 12.5,
+                "prompt_tokens": 144,
+                "secret_scan_count": 2,
+            },
+        },
+        set(),
+    )
+
+    assert clean == {
+        "access_token": "[REDACTED]",
+        "refresh-token": "[REDACTED]",
+        "oauthClientSecret": "[REDACTED]",
+        "database_password": "[REDACTED]",
+        "signing_private_key": "[REDACTED]",
+        "metrics": {
+            "access_token_count": 3,
+            "refresh_token_latency_ms": 12.5,
+            "prompt_tokens": 144,
+            "secret_scan_count": 2,
+        },
+    }

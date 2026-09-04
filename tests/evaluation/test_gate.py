@@ -2106,3 +2106,81 @@ def test_incomparable_baseline_is_an_infrastructure_result(
     assert result.passed is False
     assert result.comparable is False
     assert "incomparable_baseline" in result.infrastructure_errors
+
+
+@pytest.mark.parametrize(
+    ("provenance_update", "expected_error"),
+    [
+        ({"git_revision": "unavailable"}, "report_git_revision_invalid"),
+        ({"git_revision": "fabricated-revision"}, "report_git_revision_invalid"),
+        ({"git_revision": "g" * 40}, "report_git_revision_invalid"),
+        ({"git_dirty": True}, "report_git_worktree_dirty"),
+    ],
+)
+def test_gate_rejects_unverifiable_report_git_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+    provenance_update: dict[str, object],
+    expected_error: str,
+) -> None:
+    """Accepting malformed or dirty current provenance must fail this test."""
+    report = make_report()
+    tampered = report.model_copy(
+        update={"provenance": report.provenance.model_copy(update=provenance_update)}
+    )
+    _trust_synthetic_reports(monkeypatch, tampered)
+
+    result = enforce_gate(tampered)
+
+    assert result.passed is False
+    assert result.comparable is False
+    assert expected_error in result.infrastructure_errors
+
+
+@pytest.mark.parametrize(
+    ("provenance_update", "expected_error"),
+    [
+        ({"git_revision": "unavailable"}, "baseline_git_revision_invalid"),
+        ({"git_revision": "fabricated-revision"}, "baseline_git_revision_invalid"),
+        ({"git_dirty": True}, "baseline_git_worktree_dirty"),
+    ],
+)
+def test_gate_rejects_unverifiable_baseline_git_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+    provenance_update: dict[str, object],
+    expected_error: str,
+) -> None:
+    """Accepting malformed or dirty baseline provenance must fail this test."""
+    current = make_report()
+    baseline = make_report()
+    tampered_baseline = baseline.model_copy(
+        update={"provenance": baseline.provenance.model_copy(update=provenance_update)}
+    )
+    _trust_synthetic_reports(monkeypatch, current, tampered_baseline)
+
+    result = enforce_gate(current, baseline=tampered_baseline)
+
+    assert result.passed is False
+    assert result.comparable is False
+    assert expected_error in result.infrastructure_errors
+
+
+def test_gate_allows_different_clean_full_git_revisions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requiring the baseline and current revisions to be equal would be a bug."""
+    current = make_report()
+    original_baseline = make_report()
+    baseline = original_baseline.model_copy(
+        update={
+            "provenance": original_baseline.provenance.model_copy(
+                update={"git_revision": "e" * 40}
+            )
+        }
+    )
+    _trust_synthetic_reports(monkeypatch, current, baseline)
+
+    result = enforce_gate(current, baseline=baseline)
+
+    assert current.provenance.git_revision != baseline.provenance.git_revision
+    assert result.passed is True
+    assert result.comparable is True
