@@ -1,6 +1,7 @@
 import {
   ApiClientError,
   approveRun,
+  createEvaluation,
   getRuns,
   requestJson,
 } from "./api";
@@ -55,5 +56,24 @@ describe("typed API client", () => {
       reason: "unsafe",
     });
     expect(ApiClientError).toBeDefined();
+  });
+
+  it("creates the catalog evaluation with the narrow public body", async () => {
+    const report = { evaluation_id: "11111111-1111-1111-1111-111111111111" };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(report), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createEvaluation()).resolves.toEqual(report);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/v1/evaluations");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ suite: "incident-response" });
   });
 });

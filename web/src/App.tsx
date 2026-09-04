@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-import { ApiClientError, approveRun, createRun } from "./api";
+import { ApiClientError, approveRun, createEvaluation, createRun } from "./api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MutationNotice } from "./components/MutationNotice";
 import { Navigation } from "./components/Navigation";
@@ -15,10 +15,12 @@ function Dashboard() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const detail = useRunDetail(selectedRunId);
   const [mutationState, setMutationState] = useState<MutationState>("idle");
+  const [evaluationPending, setEvaluationPending] = useState(false);
   const [notice, setNotice] = useState("");
   const selectedRunIdRef = useRef<string | null>(null);
   const selectionGeneration = useRef(0);
   const approvalsInFlight = useRef(new Set<string>());
+  const evaluationInFlight = useRef(false);
   const dismissNotice = useCallback(() => setNotice(""), []);
   const selectRun = useCallback((runId: string | null) => {
     selectedRunIdRef.current = runId;
@@ -37,6 +39,23 @@ function Dashboard() {
     } catch {
       setMutationState("error");
       setNotice("The run could not be started. Retry when the API is available.");
+    }
+  };
+
+  const runEvaluation = async () => {
+    if (evaluationInFlight.current) return;
+    evaluationInFlight.current = true;
+    setEvaluationPending(true);
+    setNotice("");
+    try {
+      const report = await createEvaluation();
+      overview.replaceEvaluation(report);
+      setNotice("Evaluation complete");
+    } catch {
+      setNotice("The evaluation could not be completed. Retry when the API is available.");
+    } finally {
+      evaluationInFlight.current = false;
+      setEvaluationPending(false);
     }
   };
 
@@ -117,11 +136,13 @@ function Dashboard() {
               evaluation={overview.data.evaluation}
               scenarios={overview.data.scenarios}
               launching={mutationState === "pending"}
+              evaluating={evaluationPending}
               onSelectRun={(runId) => {
                 selectRun(runId);
                 setNotice("");
               }}
               onStart={(scenarioId, mode) => void startRun(scenarioId, mode)}
+              onEvaluate={() => void runEvaluation()}
               onRetry={overview.refresh}
             />
           </>

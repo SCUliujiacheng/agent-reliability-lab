@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Node 20+](https://img.shields.io/badge/node-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node 22.20+](https://img.shields.io/badge/node-22.20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0F766E.svg)](LICENSE)
 
 ![Agent Reliability Lab dashboard](docs/screenshots/dashboard-overview.png)
@@ -68,7 +68,7 @@ for guided views, search, relationship tracing, light/dark themes, and export.
 
 ## Credential-free quickstart
 
-Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 20+.
+Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 22.20+.
 
 ```bash
 git clone https://github.com/SCUliujiacheng/agent-reliability-lab.git

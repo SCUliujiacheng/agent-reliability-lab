@@ -22,6 +22,10 @@ export function useOverview() {
     setGeneration((value) => value + 1);
   }, []);
 
+  const replaceEvaluation = useCallback((evaluation: EvaluationReport) => {
+    setData((current) => ({ ...current, evaluation }));
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     const requestGeneration = activeGeneration.current + 1;
@@ -47,5 +51,5 @@ export function useOverview() {
     };
   }, [generation]);
 
-  return { data, state, refresh };
+  return { data, state, refresh, replaceEvaluation };
 }

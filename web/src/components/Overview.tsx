@@ -10,8 +10,10 @@ interface OverviewProps {
   evaluation: EvaluationReport | null;
   scenarios: ScenarioSummary[];
   launching: boolean;
+  evaluating: boolean;
   onSelectRun: (runId: string) => void;
   onStart: (scenarioId: string, mode: RunMode) => void;
+  onEvaluate: () => void;
   onRetry: () => void;
 }
 
@@ -25,8 +27,10 @@ export function Overview({
   evaluation,
   scenarios,
   launching,
+  evaluating,
   onSelectRun,
   onStart,
+  onEvaluate,
   onRetry,
 }: OverviewProps) {
   const resilient = evaluation?.modes.resilient.metrics;
@@ -40,7 +44,15 @@ export function Overview({
       </div>
       <div className="overview-header__actions">
         <span className="environment-label"><span aria-hidden="true" /> Local API</span>
-        <a className="primary-button header-action" href="#scenarios">Run scenario</a>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={evaluating || state !== "ready"}
+          onClick={onEvaluate}
+        >
+          {evaluating ? "Running evaluation…" : "Run evaluation"}
+        </button>
+        <a className="secondary-button header-action" href="#scenarios">Run scenario</a>
       </div>
     </header>
   );
@@ -98,7 +110,7 @@ export function Overview({
         <section className="comparison comparison--empty" id="evaluations">
           <p className="eyebrow">Latest evaluation</p>
           <h2>No evaluations yet</h2>
-          <p>Run a catalog suite through the API to populate the benchmark comparison.</p>
+          <p>Run the frozen catalog suite to populate the benchmark comparison.</p>
         </section>
       )}
 

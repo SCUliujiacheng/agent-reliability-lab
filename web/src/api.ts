@@ -105,6 +105,15 @@ export async function getEvaluations(
   return response.items;
 }
 
+export function createEvaluation(
+  suite = "incident-response",
+): Promise<EvaluationReport> {
+  return requestJson("/v1/evaluations", {
+    method: "POST",
+    body: JSON.stringify({ suite }),
+  });
+}
+
 export async function getScenarios(signal?: AbortSignal): Promise<ScenarioSummary[]> {
   const response = await requestJson<{ items: ScenarioSummary[] }>("/v1/scenarios", {
     signal,

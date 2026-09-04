@@ -58,6 +58,7 @@ describe("App workflows", () => {
     render(<App />);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "Run evaluation" })).toBeDisabled();
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(
       expect.arrayContaining(["/v1/runs?limit=8", "/v1/evaluations?limit=1", "/v1/scenarios"]),
     );
@@ -67,6 +68,7 @@ describe("App workflows", () => {
       requests[2].resolve(response({ items: [scenarioFixture] }));
       await Promise.all(requests.map((item) => item.promise));
     });
+    expect(screen.getByRole("button", { name: "Run evaluation" })).toBeEnabled();
   });
 
   it("launches an API scenario and opens its live run detail", async () => {
@@ -377,6 +379,75 @@ describe("App workflows", () => {
     expect(await screen.findByText("No runs yet")).toBeVisible();
     expect(screen.getByText("No evaluations yet")).toBeVisible();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/trace"))).toBe(false);
+  });
+
+  it("creates the first evaluation once and renders its metrics without a reload", async () => {
+    const evaluation = deferred<Response>();
+    const base = overviewFetch({ runs: [], evaluation: null });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/v1/evaluations" && init?.method === "POST") {
+        return evaluation.promise;
+      }
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    const runEvaluation = await screen.findByRole("button", { name: "Run evaluation" });
+    await waitFor(() => expect(runEvaluation).toBeEnabled());
+    await user.click(runEvaluation);
+    await user.click(runEvaluation);
+
+    expect(screen.getByRole("button", { name: "Running evaluation…" })).toBeDisabled();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => String(url) === "/v1/evaluations" && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+
+    await act(async () => {
+      evaluation.resolve(response(evaluationFixture(), 201));
+      await evaluation.promise;
+    });
+
+    expect(
+      within(screen.getByRole("region", { name: "Reliability metrics" })).getByText("91.7%"),
+    ).toBeVisible();
+    expect(screen.queryByText("No evaluations yet")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Evaluation complete");
+    expect(screen.getByRole("button", { name: "Run evaluation" })).toBeEnabled();
+  });
+
+  it("keeps evaluation creation retryable after a stable API failure", async () => {
+    const base = overviewFetch({ evaluation: null });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/v1/evaluations" && init?.method === "POST") {
+        return response(
+          {
+            error: {
+              code: "evaluation_in_progress",
+              message: "Another evaluation is already running.",
+              details: {},
+            },
+          },
+          409,
+        );
+      }
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    const runEvaluation = await screen.findByRole("button", { name: "Run evaluation" });
+    await waitFor(() => expect(runEvaluation).toBeEnabled());
+    await user.click(runEvaluation);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "The evaluation could not be completed. Retry when the API is available.",
+    );
+    expect(screen.getByRole("button", { name: "Run evaluation" })).toBeEnabled();
   });
 
   it("renders a recoverable dashboard error when an overview request fails", async () => {
