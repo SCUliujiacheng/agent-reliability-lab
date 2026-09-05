@@ -30,7 +30,7 @@ The default benchmark isolates orchestration reliability from model variance,
 credentials, rate limits, and cost. This makes failures reproducible and lets
 the exact grader prove a narrow claim. An OpenAI-compatible policy adapter is
 available as an integration boundary, but its behavior is deliberately not
-folded into the deterministic headline result.
+folded into the fixed benchmark result.
 
 ### Why SQLite?
 

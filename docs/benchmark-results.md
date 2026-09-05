@@ -10,7 +10,7 @@ The committed baseline is an evidence artifact, not a claim about arbitrary
 agents or production workloads. It uses the local scripted policy, synthetic
 tools, and exact graders; it makes no network or model-provider calls.
 
-## Headline result
+## Measured result
 
 | Metric | Fragile | Resilient | Difference |
 | --- | ---: | ---: | ---: |

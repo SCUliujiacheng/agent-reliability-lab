@@ -41,7 +41,7 @@ bytes. The evaluation report also carries a canonical suite manifest with:
 - expected tool sequence, outcome, and approval requirement.
 
 The suite hash commits to that complete manifest. The regression gate does not
-trust the report's headline metrics; it reconstructs them from cases and ordered
+trust the report's reported metrics; it reconstructs them from cases and ordered
 trace evidence, validates trace and scenario identities, and rejects
 incomparable or internally inconsistent inputs.
 
@@ -85,5 +85,5 @@ claim-relevant evidence while keeping version-controlled provenance explicit.
 New scenarios should introduce one clearly named behavior, declare exact
 expected outcomes, and add tests for both the scenario loader and the gate.
 Do not mix real credentials or production logs into YAML fixtures. If a new
-backend is nondeterministic, keep it out of the headline exact benchmark or
+backend is nondeterministic, keep it out of the fixed benchmark or
 publish a separate evaluation with its own grader and limitations.
