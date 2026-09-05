@@ -1,10 +1,10 @@
-# Interview guide
+# Agent Reliability Lab technical design tour
 
-This document is a concise map for explaining Agent Reliability Lab in a
-technical interview. It emphasizes decisions and evidence rather than a tour of
-every file.
+This document is a concise route through Agent Reliability Lab's design,
+evidence, and guarantee boundaries. It follows the decisions that shaped the
+system instead of touring every file.
 
-## Thirty-second summary
+## The system in thirty seconds
 
 > Agent Reliability Lab is a local-first test bench for tool-using agents. It
 > runs the same frozen incident scenarios through fragile and resilient
@@ -12,23 +12,23 @@ every file.
 > human approval, and turns the resulting traces into an exact regression gate
 > and an explorable dashboard.
 
-## Five-minute demo
+## Five-minute walkthrough
 
 1. Open the dashboard, click **Run evaluation**, and inspect the returned
-   report. Point out the 66.7% versus 100% correctness result and the exact
+   report. Start with the 66.7% versus 100% correctness result and the exact
    six-case denominator.
 2. Launch `timeout-recovery` in resilient mode. Open the trace and follow the
    injected timeout, failed attempt, retry, successful attempt, checkpoint, and
    terminal result in sequence.
-3. Launch `approval-reconstruction`. Explain that the service can be rebuilt
-   around the same SQLite database before approval. Allow the action and show
+3. Launch `approval-reconstruction`. Rebuild the service around the same SQLite
+   database before approval. Allow the action and show
    the single `approval.recorded` event and single write execution.
 4. Export the trace JSON, then run the CLI gate against the committed baseline.
 5. Open the interactive architecture and compare the **Interactive run** and
    **Evaluation gate** guided views; use **Security boundaries** to explain
    where the guarantees stop.
 
-## Design decisions worth discussing
+## Design decisions and guarantee boundaries
 
 ### Why a scripted policy?
 
@@ -81,7 +81,7 @@ boundary can instead return a plain 400 or empty Nginx 444. These controls
 reduce risk, but the demo has no authentication or tenant isolation and must
 not be exposed as a production control plane.
 
-## Likely follow-up questions
+## Design questions
 
 **How would you scale it beyond one process?**  Move durable state to PostgreSQL,
 replace local claim timing with database-backed leases using server time, use a
@@ -106,16 +106,17 @@ approval resumes the action selected before the pause without another
 reservation. At the limit, the runtime atomically records terminal state and
 `run.failed` with `action_budget_exhausted`, without one more policy call.
 
-**What failure was hardest?**  Cross-instance approval races are more subtle
-than button debouncing. The tests instantiate two application objects over the
-same SQLite database and force competing decisions, proving same-decision
-idempotency and conflicting-decision convergence at that persistence boundary.
+**Which failure exposed the deepest design problem?**  Cross-instance approval
+races are more subtle than button debouncing. The tests instantiate two
+application objects over the same SQLite database and force competing
+decisions, proving same-decision idempotency and conflicting-decision
+convergence at that persistence boundary.
 
-**What would you build next?**  PostgreSQL migrations, authenticated users and
+**What comes next?**  PostgreSQL migrations, authenticated users and
 RBAC, distributed workers, OpenTelemetry export, property-based state-machine
 tests, and a separate statistically grounded model evaluation track.
 
-## Honest limitations
+## Scope and limitations
 
 - Six synthetic scenarios cannot represent real-world incident diversity.
 - The benchmark policy is scripted, so no claim is made about LLM reasoning
@@ -124,5 +125,5 @@ tests, and a separate statistically grounded model evaluation track.
 - There is no authentication, authorization, tenancy, or secrets manager.
 - Tool side effects are simulated; this is not a production incident executor.
 
-These constraints are deliberate. They keep the repository runnable by a
-reviewer while making the tested reliability contracts precise.
+These constraints are deliberate. They keep the repository runnable from a
+clean local checkout while making the tested reliability contracts precise.
