@@ -9,11 +9,11 @@ artifact.
 - diagram type: `architecture`
 - quality profile: `showcase`
 - repository evidence: `17` verified references at
-  `b48ab5e94ff53ca3e558a36ad0769bf508e9677f`
+  `727f9614b60ddfd41adc1a7cb38e4c5c360ab3c3`
 - specification SHA-256:
-  `ebed1d04501f7d8af60a7c123a4bec63672532c4638a66eadaafdf7fd4bfe2de`
+  `2b292db0b3cd4b43434f2fda649d31756d413915f0dd7917c9516cb72f01064f`
 - HTML SHA-256:
-  `c6935ab4a2e9ef9cc79b0218d6675a83017ca2a641aa514e5a7883f259d5a0c7`
+  `499bfbd2cdc2953ac32487f18801286ab2b6762ed6f98df749648c25007aa638`
 - specification bytes: `8,765`
 - HTML bytes: `725,656`
 - structural checks: `9 / 9`
