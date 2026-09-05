@@ -1,18 +1,12 @@
 # Agent Reliability Lab technical design tour
 
-This document is a concise route through Agent Reliability Lab's design,
-evidence, and guarantee boundaries. It follows the decisions that shaped the
-system instead of touring every file.
+Start with `timeout-recovery`, then open its trace. It is the quickest way to
+see what this project is checking: the first log lookup times out, resilient
+mode records that failure, retries inside its boundary, and leaves a checkpoint
+and result behind. Then hand the report to the CLI gate and compare it with the
+committed baseline.
 
-## The system in thirty seconds
-
-> Agent Reliability Lab is a local-first test bench for tool-using agents. It
-> runs the same frozen incident scenarios through fragile and resilient
-> execution, persists every state transition and tool attempt, supports durable
-> human approval, and turns the resulting traces into an exact regression gate
-> and an explorable dashboard.
-
-## Five-minute walkthrough
+## Walk through it once
 
 1. Open the dashboard, click **Run evaluation**, and inspect the returned
    report. Start with the 66.7% versus 100% correctness result and the exact
@@ -36,7 +30,7 @@ The default benchmark isolates orchestration reliability from model variance,
 credentials, rate limits, and cost. This makes failures reproducible and lets
 the exact grader prove a narrow claim. An OpenAI-compatible policy adapter is
 available as an integration boundary, but its behavior is deliberately not
-folded into the deterministic headline result.
+folded into the fixed benchmark result.
 
 ### Why SQLite?
 
@@ -46,14 +40,15 @@ good single-node demonstration substrate. The code treats persistence as the
 coordination boundary, including cross-instance approval decisions, while the
 documentation explicitly avoids claiming multi-node production readiness.
 
-### How is exactly-once behavior approached?
+### What happens to duplicate approvals?
 
-There is no universal exactly-once network guarantee. The project implements a
-bounded local contract: approval recording is atomic, run transitions use
-optimistic state/version checks, high-risk writes require idempotency keys, and
-tool results are cached behind a claim lease. Concurrent duplicate approvals
-therefore converge on one durable decision and one write in the tested SQLite
-deployment.
+This is not a claim of universal exactly-once behavior on a network. The tested
+case is narrower: two application instances share one SQLite database and send
+decisions for the same waiting action. Approval recording is transactional, run
+transitions use optimistic state/version checks, high-risk writes need an
+idempotency key, and tool results are cached behind a claim lease. In that case,
+matching concurrent decisions converge on one durable decision and one write;
+stale or conflicting decisions are rejected.
 
 ### Why not trust summary metrics in JSON?
 
@@ -81,42 +76,52 @@ boundary can instead return a plain 400 or empty Nginx 444. These controls
 reduce risk, but the demo has no authentication or tenant isolation and must
 not be exposed as a production control plane.
 
-## Design questions
+## Possible extensions
 
-**How would you scale it beyond one process?**  Move durable state to PostgreSQL,
-replace local claim timing with database-backed leases using server time, use a
-queue for resumable execution, and preserve the same idempotency and trace
-contracts. Add migrations and contention/load tests before horizontal scale.
+### Multi-process execution
 
-**How would you evaluate a real model?**  Keep the frozen scripted suite as the
-orchestration control, add a separate provider-backed suite, record model and
-prompt versions, repeat cases over seeds, separate deterministic safety checks
-from statistical quality metrics, and publish uncertainty and cost.
+Durable state can move to PostgreSQL, while local claim timing would need
+database-backed leases based on server time. A queue can resume work without
+changing the idempotency and trace contracts. Migrations and contention/load
+tests belong before horizontal scale.
 
-**How is approval replay bounded today?**  The client must echo the run's
-current action step and fingerprint. One SQLite transaction records a decision
-only while the run is still waiting for that exact action; stale targets are
-rejected and exact duplicates converge. Authentication, authorization, trusted
-actor identity, and approval expiry remain production work.
+### Real-model evaluation
 
-**What does the action budget count?**  Each new policy call reserves one
-durable slot before invocation, so cancellation cannot reset the allowance. A
-returned `finish` consumes that reservation; tool retries do not. A pending
-approval resumes the action selected before the pause without another
-reservation. At the limit, the runtime atomically records terminal state and
-`run.failed` with `action_budget_exhausted`, without one more policy call.
+The frozen scripted suite remains the orchestration control. A separate
+provider-backed suite would record model and prompt versions, repeat cases over
+seeds, and report statistical quality separately from deterministic checks.
 
-**Which failure exposed the deepest design problem?**  Cross-instance approval
-races are more subtle than button debouncing. The tests instantiate two
-application objects over the same SQLite database and force competing
-decisions, proving same-decision idempotency and conflicting-decision
-convergence at that persistence boundary.
+### Approval replay
 
-**What comes next?**  PostgreSQL migrations, authenticated users and
-RBAC, distributed workers, OpenTelemetry export, property-based state-machine
-tests, and a separate statistically grounded model evaluation track.
+The client echoes the run's current action step and fingerprint. One SQLite
+transaction records a decision only while the run is waiting for that exact
+action; stale targets are rejected and exact duplicates converge.
+Authentication, authorization, trusted actor identity, and approval expiry are
+not implemented.
 
-## Scope and limitations
+### Action budget
+
+Each new policy call reserves one durable slot before invocation, so
+cancellation cannot reset the allowance. A returned `finish` consumes that
+reservation; tool retries do not. A pending approval resumes the action chosen
+before the pause without another reservation. At the limit, the runtime writes
+the terminal state and `run.failed` with `action_budget_exhausted`, without one
+more policy call.
+
+### Concurrent approvals
+
+The tests create two application objects over one SQLite database and submit
+competing decisions. Identical decisions are idempotent. If the decisions
+conflict, only one is stored and the other request receives HTTP 409.
+
+### Further experiments
+
+I would keep PostgreSQL migrations, authenticated users and RBAC, distributed
+workers, OpenTelemetry export, property-based state-machine tests, and
+real-model evaluation in separate experiments rather than folding them into
+the six fixed cases here.
+
+## Scope and limits
 
 - Six synthetic scenarios cannot represent real-world incident diversity.
 - The benchmark policy is scripted, so no claim is made about LLM reasoning
@@ -125,5 +130,5 @@ tests, and a separate statistically grounded model evaluation track.
 - There is no authentication, authorization, tenancy, or secrets manager.
 - Tool side effects are simulated; this is not a production incident executor.
 
-These constraints are deliberate. They keep the repository runnable from a
-clean local checkout while making the tested reliability contracts precise.
+I stopped at a single node because it is enough to observe retries, approvals,
+and reconstruction. Distributed behavior needs a separate set of experiments.

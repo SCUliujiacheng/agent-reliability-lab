@@ -490,13 +490,15 @@ describe("App workflows", () => {
     expect(result.violations).toEqual([]);
   });
 
-  it("uses the visual-contract headline and API-backed benchmark rail", async () => {
+  it("explains the investigation path before showing the benchmark rail", async () => {
     vi.stubGlobal("fetch", overviewFetch({ runs: [runFixture()] }));
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "Deterministic recovery evidence" }),
+      await screen.findByRole("heading", { name: "What happens after an agent fails?" }),
     ).toBeVisible();
+    expect(screen.getByText("Run the frozen cases, compare fragile with resilient, then open the trace."))
+      .toBeVisible();
     expect(screen.getByRole("link", { name: "Run scenario" })).toBeVisible();
     const rail = screen.getByRole("region", { name: "Reliability metrics" });
     for (const label of [

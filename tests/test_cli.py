@@ -17,6 +17,13 @@ SUITE = Path(__file__).parent.parent / "scenarios" / "incident-response"
 RUNNER = CliRunner()
 
 
+def test_human_eval_output_names_the_invalid_output_metric() -> None:
+    result = RUNNER.invoke(app, ["eval", str(SUITE)])
+
+    assert result.exit_code == 0, result.output
+    assert "accepted invalid outputs" in result.stdout
+
+
 def test_eval_json_stdout_is_exactly_one_object(tmp_path: Path) -> None:
     output = tmp_path / "report.json"
     result = RUNNER.invoke(app, ["eval", str(SUITE), "--output", str(output), "--json"])

@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-Agent Reliability Lab is a research and engineering demonstration. Security fixes
-are applied to the latest commit on `main`; older snapshots are not maintained
-as supported releases.
+This is a research and engineering demonstration, not a deployed service.
+Security fixes land on the latest commit on `main`; older snapshots are not
+maintained as supported releases.
 
 ## Reporting a vulnerability
 
@@ -18,8 +18,8 @@ minimal reproduction, and any suggested mitigation.
 
 ## Scope and threat boundary
 
-The repository demonstrates local single-node agent orchestration. Inbound HTTP
-is local by default: Compose publishes both services only on loopback, FastAPI
+The repository demonstrates local single-node agent orchestration; that is where
+its boundary stops. Inbound HTTP is local by default: Compose publishes both services only on loopback, FastAPI
 checks an exact Host allowlist, and Nginx rejects unknown virtual hosts. On the
 Compose path, Nginx adds `Content-Security-Policy: frame-ancestors 'none'` and
 `X-Frame-Options: DENY`; direct Vite or Uvicorn development does not add that

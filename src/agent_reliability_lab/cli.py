@@ -117,7 +117,7 @@ def gate_command(
     baseline: Annotated[Path | None, typer.Option()] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Enforce exact reliability and optional baseline regression thresholds."""
+    """Check a report, optionally against the committed baseline."""
     try:
         result = enforce_gate(
             _read_report(report_path),
@@ -145,7 +145,7 @@ def export_trace_command(
     output: Annotated[Path | None, typer.Option()] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Export ordered sanitized trace events for one persisted run."""
+    """Export the ordered, sanitized trace JSON for a saved run."""
     try:
         store = _store(database)
         run = store.get_run(UUID(run_id))
@@ -248,7 +248,7 @@ def _fail(error: Exception, json_output: bool) -> NoReturn:
 
 
 def _evaluation_table(report: EvaluationReport) -> str:
-    lines = ["mode      correctness  recovery  invalid accepted"]
+    lines = ["mode      correctness  recovery  accepted invalid outputs"]
     for mode, result in report.modes.items():
         metrics = result.metrics
         recovery = (

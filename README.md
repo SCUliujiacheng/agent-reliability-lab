@@ -1,7 +1,7 @@
 <h1 align="center">Agent Reliability Lab</h1>
 
 <p align="center">
-  <strong>A local-first lab for agents that retry safely, pause for human approval, survive reconstruction, and fail closed.</strong>
+  <strong>Six fixed failure scenarios for checking retries, approvals, restarts, and the traces they leave.</strong>
 </p>
 
 <p align="center">
@@ -12,10 +12,10 @@
 </p>
 
 <p align="center">
-  <a href="#why-i-built-this">Why I built this</a> ·
+  <a href="#what-i-wanted-to-see-after-a-failure">The question</a> ·
   <a href="#measured-result">Measured result</a> ·
   <a href="#architecture">Architecture</a> ·
-  <a href="#credential-free-quickstart">Run locally</a> ·
+  <a href="#run-it-locally">Run locally</a> ·
   <a href="#five-minute-technical-tour">Technical tour</a>
 </p>
 
@@ -23,23 +23,22 @@
   <strong>English</strong> · <a href="https://github.com/SCUliujiacheng/agent-reliability-lab-zh">简体中文</a>
 </p>
 
-## Why I built this
+## What I wanted to see after a failure
 
-I built Agent Reliability Lab because I am more interested in what an agent
-does after something goes wrong than in another happy-path demo. A system feels
-trustworthy only when its retry policy, approvals, reconstruction, and evidence
-survive failure—not merely when one run succeeds.
+Most agent demos stop once the happy path works. I wanted to look at the part
+that usually gets skipped: what happens after a tool call fails? Can the run
+say where it stopped, resume without doing the risky thing twice, and leave a
+record that someone else can inspect?
 
-That question shaped the whole repository. Failure behavior is the main
-artifact: exact scenario contracts, a durable state machine, schema-first
-tools, ordered sanitized traces, human approval, reproducible fault injection,
-and a regression gate that reconstructs metrics from evidence instead of
-trusting a summary JSON file.
+This repository is where I rerun those cases. It saves state, tool attempts,
+approval decisions, and traces; the evaluator then rebuilds its result from
+those records. The current scope is local, single-node, and synthetic. It is
+not a production incident executor.
 
 <p align="center">
   <img src="docs/screenshots/dashboard-overview.png" alt="Agent Reliability Lab dashboard showing the benchmark comparison and trace evidence" width="100%">
 </p>
-<p align="center"><sub>The dashboard runs the same versioned evaluation exposed by the CLI and API.</sub></p>
+<p align="center"><sub>The dashboard, CLI, and API all run the same six scenarios.</sub></p>
 
 ## Measured result
 
@@ -63,43 +62,27 @@ fragile mode stops after one attempt. Inspect the
 [gate/provenance contract](docs/data-and-scenario-provenance.md) for the exact
 denominators, grader definitions, reconstruction rules, and limitations.
 
-## How I turned the problem into a system
+## What I ended up building
 
-I translated that reliability question into seven explicit engineering
-boundaries:
+The implementation ended up in four pieces:
 
-- **Durable orchestration** — explicit run states, checkpoints, optimistic
-  version checks, execution leases, restart-safe resume, and terminal-state
-  enforcement. Externally visible run transitions and their audit events share
-  one SQLite transaction.
-- **Bounded agent execution** — each run permits at most 64 new policy calls by
-  default (configurable from 1 to 1024). Each slot is reserved durably before
-  invocation, while tool retries remain attempts within one logical action;
-  exhaustion is persisted and traced as `action_budget_exhausted` before
-  another policy call can occur.
-- **Schema-first tool boundary** — registered tools only, strict Pydantic input
-  and output validation, at most five attempts and 60 seconds per handler
-  attempt, deterministic fault injection, idempotency keys, and cached results.
-- **Approval bound to the reviewed action** — the API exposes a sanitized
-  pending-action descriptor with the action step, SHA-256 fingerprint, tool
-  name, and arguments. SQLite accepts a decision atomically only while that
-  exact action is current; exact duplicates converge and stale or conflicting
-  decisions fail closed.
-- **Auditable evaluation** — six versioned scenarios, exact graders, per-case
-  traces, suite/action/output hashes, evidence integrity checks, and a
-  baseline-aware CI gate.
-- **Operational surface** — FastAPI with bounded requests, exact trusted hosts,
-  and stable application-route errors; Typer CLI; React/TypeScript dashboard;
-  JSON trace export; containers; and CI.
-- **Privacy-aware telemetry** — trace payloads and tool results are recursively
-  sanitized before persistence, and the API publishes narrower DTOs. Durable
-  pending-action arguments stay exact for reconstruction and must not contain
-  credentials.
+- Explicit run states, checkpoints, optimistic version checks, and execution
+  leases let a run continue after reconstruction. A state transition and its
+  outward-facing event share one SQLite transaction.
+- Registered tools use strict Pydantic input and output schemas, timeouts,
+  bounded retries, idempotency keys, and deterministic fault injection. Each
+  run also reserves policy-call slots before invocation (64 by default,
+  configurable from 1 to 1024).
+- An approval has to echo the current action step and SHA-256 fingerprint.
+  Matching duplicates converge; stale or conflicting decisions are rejected.
+- Graders rebuild metrics from per-case traces and compare them with the
+  committed baseline. FastAPI, the Typer CLI, and the React dashboard expose
+  the same underlying runs and reports.
 
 ## Architecture
 
 <p align="center">
-  <img src="docs/architecture/agent-reliability-lab-architecture.visual-check.1440x900.light.png" alt="Agent Reliability Lab system architecture" width="100%">
+  <img src="docs/architecture/agent-reliability-lab-architecture.png" alt="Agent Reliability Lab system architecture" width="100%">
 </p>
 
 The browser/API path and CLI/evaluation path share the same deterministic runtime
@@ -109,7 +92,7 @@ versioned JSON baseline is a separate regression contract.
 Open the [interactive architecture](docs/architecture/agent-reliability-lab-architecture.html)
 for guided views, search, relationship tracing, light/dark themes, and export.
 
-## Credential-free quickstart
+## Run it locally
 
 Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 22.20+.
 
@@ -167,9 +150,9 @@ PASS
 ```
 
 The gate first validates report structure, suite identity, trace uniqueness,
-ordered event semantics, deterministic outputs, and recomputed summaries. A
-tampered or incomparable artifact is an infrastructure failure, not a passing
-score.
+ordered event semantics, deterministic outputs, and recomputed summaries. If
+the suite hash, trace ordering, or recomputed summary does not match, it exits
+with an infrastructure failure.
 
 ## Inspect one failure-and-recovery trace
 
@@ -295,11 +278,11 @@ policy = OpenAICompatiblePolicy(
 
 This adapter is a tested library boundary, not the default CLI policy. Provider
 quality needs a separate repeated, statistical evaluation; it is not presented
-as part of the deterministic headline result. The adapter does not provide an
+as part of the deterministic core result. The adapter does not provide an
 outbound destination allowlist or network sandbox; production deployments must
 restrict egress independently.
 
-## Verification
+## Local checks
 
 ```bash
 uv sync --dev --locked
@@ -342,9 +325,9 @@ benchmarks/     committed baseline report
 docs/           architecture, benchmark semantics, provenance, and technical tour
 ```
 
-## Deliberate limitations
+## What this project does not prove
 
-- The headline suite has six synthetic incident scenarios; it does not model
+- The fixed suite has six synthetic incident scenarios; it does not model
   real-world incident diversity.
 - The default policy is scripted, so the benchmark measures orchestration and
   tool-boundary reliability—not LLM reasoning quality.
@@ -357,25 +340,18 @@ docs/           architecture, benchmark semantics, provenance, and technical tou
   duration.
 - Tool side effects are simulated. This is not a production incident executor.
 
-These constraints keep the project locally reproducible and make each claim
-precise. The next production-oriented steps would be PostgreSQL migrations,
-authenticated approvals, distributed leases/workers, OpenTelemetry export, and
-a separate statistically grounded provider evaluation track.
+I have not added PostgreSQL migrations, authenticated approvals, distributed
+workers, OpenTelemetry export, or repeated evaluation against a real provider.
+Those need a different experiment; the six local scenarios do not support
+claims about them.
 
-## Five-minute technical tour
+## Follow one run end to end
 
-The shortest route through the design starts with five questions:
-
-1. Why use exact trace-derived graders instead of LLM-as-judge?
-2. How do approval races converge across two application instances?
-3. Where does idempotency stop for an external side effect?
-4. How does the gate distinguish a product regression from corrupted evidence?
-5. Which contracts survive a move to PostgreSQL and worker queues?
-
-The answers and a concrete walkthrough are in the
-[technical design tour](docs/technical-tour.md).
-Scenario origins and integrity fields are documented in
-[data and scenario provenance](docs/data-and-scenario-provenance.md).
+Run `timeout-recovery`, inspect its trace, then compare the report with the
+committed baseline. The [technical design tour](docs/technical-tour.md) covers
+grading, approval races, idempotency boundaries, corrupted-evidence checks,
+and possible storage and worker extensions. Scenario origins and integrity
+fields are recorded in [data and scenario provenance](docs/data-and-scenario-provenance.md).
 
 ## License
 

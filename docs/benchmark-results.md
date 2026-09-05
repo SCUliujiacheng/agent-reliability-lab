@@ -10,7 +10,7 @@ The committed baseline is an evidence artifact, not a claim about arbitrary
 agents or production workloads. It uses the local scripted policy, synthetic
 tools, and exact graders; it makes no network or model-provider calls.
 
-## Headline result
+## Measured result
 
 | Metric | Fragile | Resilient | Difference |
 | --- | ---: | ---: | ---: |
@@ -55,7 +55,7 @@ masquerade as extra logical calls.
 `invalid accepted outputs / all accepted outputs`.
 
 The malformed-output scenario injects one schema-invalid response per mode.
-Both modes detect and reject it at the typed tool boundary. The headline count
+Both modes detect and reject it at the typed tool boundary. The reported count
 is therefore zero accepted invalid outputs, while the report retains separate
 detected and rejected counts.
 
@@ -69,7 +69,7 @@ The baseline records nearest-rank local `perf_counter_ns` measurements:
 | P95 case latency | 85.4523 ms | 63.8965 ms |
 
 These values help detect gross regressions in one environment. They are not a
-cross-machine throughput benchmark and are not enforced as headline quality
+cross-machine throughput benchmark and are not enforced as benchmark
 claims.
 
 ## Reproduce and verify

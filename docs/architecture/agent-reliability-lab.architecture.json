@@ -271,7 +271,7 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "Observable by design",
+      "title": "What I inspect",
       "items": [
         "Every transition is a sequence-ordered trace event",
         "Approvals are atomically bound to the reviewed action fingerprint"
@@ -279,15 +279,15 @@
     },
     {
       "dot": "emerald",
-      "title": "Measurable reliability",
+      "title": "How I compare the modes",
       "items": [
         "The same deterministic faults exercise both execution modes",
-        "A versioned baseline turns benchmark claims into a CI gate"
+        "The CI gate rechecks the versioned baseline"
       ]
     },
     {
       "dot": "amber",
-      "title": "Deliberate scope",
+      "title": "What I left out",
       "items": [
         "Single-process API and SQLite are demonstration boundaries",
         "The optional provider endpoint is external and requires HTTPS off-loopback"

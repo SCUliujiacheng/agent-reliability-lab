@@ -39,8 +39,8 @@ export function Overview({
     <header className="overview-header">
       <div>
         <p className="eyebrow">Agent Reliability Lab</p>
-        <h1>Deterministic recovery evidence</h1>
-        <p>Compare execution modes, inspect durable traces, and replay controlled reliability scenarios.</p>
+        <h1>What happens after an agent fails?</h1>
+        <p>Run the frozen cases, compare fragile with resilient, then open the trace.</p>
       </div>
       <div className="overview-header__actions">
         <span className="environment-label"><span aria-hidden="true" /> Local API</span>
@@ -65,7 +65,7 @@ export function Overview({
           <div>
             <p className="eyebrow">API unavailable</p>
             <h2>Dashboard data could not be loaded</h2>
-            <p>Check the local API and retry. No partial response data has been displayed.</p>
+            <p>Check that the local API is running, then try again.</p>
           </div>
           <button type="button" className="primary-button" onClick={onRetry}>Retry dashboard</button>
         </section>
@@ -129,8 +129,8 @@ export function Overview({
         <aside className="launcher-panel" id="scenarios" aria-labelledby="launcher-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Controlled replay</p>
-              <h2 id="launcher-title">Scenario launcher</h2>
+              <p className="eyebrow">Start with one fixed case</p>
+              <h2 id="launcher-title">Pick a scenario</h2>
             </div>
           </div>
           <ScenarioLauncher
@@ -145,14 +145,14 @@ export function Overview({
         <section className="trace-preview" aria-labelledby="trace-preview-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Execution trace</p>
-              <h2 id="trace-preview-title">Open a run to inspect its waterfall</h2>
+              <p className="eyebrow">Then read the trace</p>
+              <h2 id="trace-preview-title">Open a run and follow what happened</h2>
             </div>
           </div>
           <div className="preview-steps" aria-hidden="true">
             <span /><span /><span /><span />
           </div>
-          <p>Trace events are requested only after a run is selected, keeping the overview bounded.</p>
+          <p>The overview waits until you pick a run before loading its events.</p>
         </section>
       </div>
     </main>
