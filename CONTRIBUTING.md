@@ -1,9 +1,8 @@
 # Contributing
 
-Thanks for helping improve Agent Reliability Lab. Changes should preserve the
-repository's central contract: reliability claims must be reproducible from
-ordered evidence and must fail closed when that evidence is incomplete or
-inconsistent.
+Thanks for working on Agent Reliability Lab. The rule that matters here is
+simple: a reliability claim has to be reproducible from ordered evidence, and
+the check has to fail when that evidence is incomplete or inconsistent.
 
 ## Development setup
 
@@ -29,7 +28,7 @@ uv run arl eval scenarios/incident-response --output artifacts/current-report.js
 uv run arl gate artifacts/current-report.json --baseline benchmarks/baseline-report.json
 ```
 
-## Change guidelines
+## Things to keep in mind
 
 - Add a failing test before changing runtime, tool, storage, API, or gate
   behavior.
@@ -66,6 +65,6 @@ must not silently replace the deterministic baseline.
 
 ## Pull requests
 
-Keep pull requests focused. Include the behavior change, failure mode, test
-evidence, migration or compatibility impact, and any limitation that remains.
-Screenshots are expected for visible dashboard changes.
+Keep pull requests focused. Say what behavior and failure mode changed, what
+the tests show, whether there is a migration or compatibility impact, and what
+limitation remains. Include screenshots for visible dashboard changes.

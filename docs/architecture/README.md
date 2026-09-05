@@ -1,42 +1,27 @@
-# Architecture artifact verification
+# How the architecture diagram is made
 
-The architecture diagram is generated from
-`agent-reliability-lab.architecture.json` as a self-contained interactive HTML
-artifact.
+The diagram comes from `agent-reliability-lab.architecture.json` and is emitted
+as a self-contained interactive HTML file. The JSON describes components,
+relationships, and the explanatory cards; the HTML adds theme switching,
+pan/zoom, search, guided views, relationship tracing, and offline export.
 
-## Delivery receipt
+`agent-reliability-lab-architecture.visual-check.html` is a contact sheet of
+the checked captures. Open the main HTML when you want to explore the graph.
 
-- diagram type: `architecture`
-- quality profile: `showcase`
-- repository evidence: `17` verified references at
-  `727f9614b60ddfd41adc1a7cb38e4c5c360ab3c3`
-- specification SHA-256:
-  `2b292db0b3cd4b43434f2fda649d31756d413915f0dd7917c9516cb72f01064f`
-- HTML SHA-256:
-  `499bfbd2cdc2953ac32487f18801286ab2b6762ed6f98df749648c25007aa638`
-- specification bytes: `8,765`
-- HTML bytes: `725,656`
-- structural checks: `9 / 9`
-- composition: `0` errors, `0` warnings
+## What I checked
 
-## Visual check
+Generation verified 17 repository references from the JSON and passed all 9 / 9
+structural checks, with 0 composition errors and 0 warnings. The current
+specification SHA-256 is
+`2b292db0b3cd4b43434f2fda649d31756d413915f0dd7917c9516cb72f01064f`; the HTML
+SHA-256 is `499bfbd2cdc2953ac32487f18801286ab2b6762ed6f98df749648c25007aa638`.
 
-Containment and readability checks passed at:
+I checked containment and readability at 1440 × 900, 1600 × 1000, 1920 × 1080,
+and 2048 × 1320. Each viewport had zero horizontal and vertical document
+overflow, and the smallest projected node text stayed above the 6 px check
+floor. The light and dark captures at 1440 × 900 and 2048 × 1320 were also
+inspected manually: labels and cards were not clipped, and there were no route
+collisions or ambiguous corridors.
 
-- 1440 × 900
-- 1600 × 1000
-- 1920 × 1080
-- 2048 × 1320
-
-Every viewport reported zero horizontal and vertical document overflow. The
-smallest projected node text was above the 6 px validation floor. The automated
-receipt remains `visualReview: "pending"` by design: it records containment,
-not a subjective polish verdict. Light and dark screenshots were captured at
-1440 × 900 and 2048 × 1320 and inspected manually; no clipped labels, route
-collisions, or ambiguous corridors were found, so the separate manual review
-passed without a correction round.
-
-`agent-reliability-lab-architecture.visual-check.html` is a local contact sheet
-for the four checked captures. The main HTML remains the richer artifact: it
-supports theme switching, pan/zoom, search, guided views, relationship tracing,
-and export without an external runtime.
+The generated result still says `visualReview: "pending"`. That field records
+automated containment checks; it is not a substitute for visual judgment.

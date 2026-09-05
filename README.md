@@ -15,7 +15,7 @@
   <a href="#why-i-built-this">Why I built this</a> ·
   <a href="#measured-result">Measured result</a> ·
   <a href="#architecture">Architecture</a> ·
-  <a href="#credential-free-quickstart">Run locally</a> ·
+  <a href="#run-it-locally">Run locally</a> ·
   <a href="#five-minute-technical-tour">Technical tour</a>
 </p>
 
@@ -25,16 +25,15 @@
 
 ## Why I built this
 
-I built Agent Reliability Lab because I am more interested in what an agent
-does after something goes wrong than in another happy-path demo. A system feels
-trustworthy only when its retry policy, approvals, reconstruction, and evidence
-survive failure—not merely when one run succeeds.
+Most agent demos stop once the happy path works. I wanted to look at the part
+that usually gets skipped: what happens after a tool call fails? Can the run
+say where it stopped, resume without doing the risky thing twice, and leave a
+record that someone else can inspect?
 
-That question shaped the whole repository. Failure behavior is the main
-artifact: exact scenario contracts, a durable state machine, schema-first
-tools, ordered sanitized traces, human approval, reproducible fault injection,
-and a regression gate that reconstructs metrics from evidence instead of
-trusting a summary JSON file.
+That is the scope here. State, tool attempts, approval decisions, and traces
+stay in one inspectable path; the evaluator rebuilds its result from those
+records. It is a small test bench for pulling at those boundaries, not a
+production incident executor.
 
 <p align="center">
   <img src="docs/screenshots/dashboard-overview.png" alt="Agent Reliability Lab dashboard showing the benchmark comparison and trace evidence" width="100%">
@@ -63,10 +62,10 @@ fragile mode stops after one attempt. Inspect the
 [gate/provenance contract](docs/data-and-scenario-provenance.md) for the exact
 denominators, grader definitions, reconstruction rules, and limitations.
 
-## How I turned the problem into a system
+## What I ended up building
 
-I translated that reliability question into seven explicit engineering
-boundaries:
+The project follows a few fairly ordinary constraints that matter once a run
+has failed:
 
 - **Durable orchestration** — explicit run states, checkpoints, optimistic
   version checks, execution leases, restart-safe resume, and terminal-state
@@ -109,7 +108,7 @@ versioned JSON baseline is a separate regression contract.
 Open the [interactive architecture](docs/architecture/agent-reliability-lab-architecture.html)
 for guided views, search, relationship tracing, light/dark themes, and export.
 
-## Credential-free quickstart
+## Run it locally
 
 Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 22.20+.
 
@@ -299,7 +298,7 @@ as part of the deterministic headline result. The adapter does not provide an
 outbound destination allowlist or network sandbox; production deployments must
 restrict egress independently.
 
-## Verification
+## Local checks
 
 ```bash
 uv sync --dev --locked
@@ -342,7 +341,7 @@ benchmarks/     committed baseline report
 docs/           architecture, benchmark semantics, provenance, and technical tour
 ```
 
-## Deliberate limitations
+## What this project does not prove
 
 - The headline suite has six synthetic incident scenarios; it does not model
   real-world incident diversity.
@@ -357,14 +356,16 @@ docs/           architecture, benchmark semantics, provenance, and technical tou
   duration.
 - Tool side effects are simulated. This is not a production incident executor.
 
-These constraints keep the project locally reproducible and make each claim
-precise. The next production-oriented steps would be PostgreSQL migrations,
-authenticated approvals, distributed leases/workers, OpenTelemetry export, and
-a separate statistically grounded provider evaluation track.
+These constraints keep the local result narrow enough to check. Moving toward
+production would mean PostgreSQL migrations, authenticated approvals,
+distributed leases/workers, OpenTelemetry export, and a separate statistically
+grounded provider-evaluation track. None of that is claimed here.
 
 ## Five-minute technical tour
 
-The shortest route through the design starts with five questions:
+The quickest way through the design is to run `timeout-recovery`, open its
+trace, and then compare the report against the committed baseline. Along the
+way, these are the questions worth asking:
 
 1. Why use exact trace-derived graders instead of LLM-as-judge?
 2. How do approval races converge across two application instances?

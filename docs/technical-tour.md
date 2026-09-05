@@ -1,18 +1,12 @@
 # Agent Reliability Lab technical design tour
 
-This document is a concise route through Agent Reliability Lab's design,
-evidence, and guarantee boundaries. It follows the decisions that shaped the
-system instead of touring every file.
+Start with `timeout-recovery`, then open its trace. It is the quickest way to
+see what this project is checking: the first log lookup times out, resilient
+mode records that failure, retries inside its boundary, and leaves a checkpoint
+and result behind. Then hand the report to the CLI gate and compare it with the
+committed baseline.
 
-## The system in thirty seconds
-
-> Agent Reliability Lab is a local-first test bench for tool-using agents. It
-> runs the same frozen incident scenarios through fragile and resilient
-> execution, persists every state transition and tool attempt, supports durable
-> human approval, and turns the resulting traces into an exact regression gate
-> and an explorable dashboard.
-
-## Five-minute walkthrough
+## Walk through it once
 
 1. Open the dashboard, click **Run evaluation**, and inspect the returned
    report. Start with the 66.7% versus 100% correctness result and the exact
@@ -46,14 +40,15 @@ good single-node demonstration substrate. The code treats persistence as the
 coordination boundary, including cross-instance approval decisions, while the
 documentation explicitly avoids claiming multi-node production readiness.
 
-### How is exactly-once behavior approached?
+### What happens to duplicate approvals?
 
-There is no universal exactly-once network guarantee. The project implements a
-bounded local contract: approval recording is atomic, run transitions use
-optimistic state/version checks, high-risk writes require idempotency keys, and
-tool results are cached behind a claim lease. Concurrent duplicate approvals
-therefore converge on one durable decision and one write in the tested SQLite
-deployment.
+This is not a claim of universal exactly-once behavior on a network. The tested
+case is narrower: two application instances share one SQLite database and send
+decisions for the same waiting action. Approval recording is transactional, run
+transitions use optimistic state/version checks, high-risk writes need an
+idempotency key, and tool results are cached behind a claim lease. In that case,
+matching concurrent decisions converge on one durable decision and one write;
+stale or conflicting decisions are rejected.
 
 ### Why not trust summary metrics in JSON?
 
@@ -81,7 +76,7 @@ boundary can instead return a plain 400 or empty Nginx 444. These controls
 reduce risk, but the demo has no authentication or tenant isolation and must
 not be exposed as a production control plane.
 
-## Design questions
+## Questions to take further
 
 **How would you scale it beyond one process?**  Move durable state to PostgreSQL,
 replace local claim timing with database-backed leases using server time, use a
@@ -116,7 +111,7 @@ convergence at that persistence boundary.
 RBAC, distributed workers, OpenTelemetry export, property-based state-machine
 tests, and a separate statistically grounded model evaluation track.
 
-## Scope and limitations
+## Scope and limits
 
 - Six synthetic scenarios cannot represent real-world incident diversity.
 - The benchmark policy is scripted, so no claim is made about LLM reasoning
