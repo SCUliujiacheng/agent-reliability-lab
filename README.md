@@ -82,7 +82,7 @@ The implementation ended up in four pieces:
 ## Architecture
 
 <p align="center">
-  <img src="docs/architecture/agent-reliability-lab-architecture.visual-check.1440x900.light.png" alt="Agent Reliability Lab system architecture" width="100%">
+  <img src="docs/architecture/agent-reliability-lab-architecture.png" alt="Agent Reliability Lab system architecture" width="100%">
 </p>
 
 The browser/API path and CLI/evaluation path share the same deterministic runtime
@@ -278,7 +278,7 @@ policy = OpenAICompatiblePolicy(
 
 This adapter is a tested library boundary, not the default CLI policy. Provider
 quality needs a separate repeated, statistical evaluation; it is not presented
-as part of the deterministic headline result. The adapter does not provide an
+as part of the deterministic core result. The adapter does not provide an
 outbound destination allowlist or network sandbox; production deployments must
 restrict egress independently.
 
@@ -327,7 +327,7 @@ docs/           architecture, benchmark semantics, provenance, and technical tou
 
 ## What this project does not prove
 
-- The headline suite has six synthetic incident scenarios; it does not model
+- The fixed suite has six synthetic incident scenarios; it does not model
   real-world incident diversity.
 - The default policy is scripted, so the benchmark measures orchestration and
   tool-boundary reliability—not LLM reasoning quality.
@@ -345,22 +345,13 @@ workers, OpenTelemetry export, or repeated evaluation against a real provider.
 Those need a different experiment; the six local scenarios do not support
 claims about them.
 
-## Five-minute technical tour
+## Follow one run end to end
 
-The quickest way through the design is to run `timeout-recovery`, open its
-trace, and then compare the report against the committed baseline. Along the
-way, these are the questions worth asking:
-
-1. Why use exact trace-derived graders instead of LLM-as-judge?
-2. How do approval races converge across two application instances?
-3. Where does idempotency stop for an external side effect?
-4. How does the gate distinguish a product regression from corrupted evidence?
-5. Which contracts survive a move to PostgreSQL and worker queues?
-
-The answers and a concrete walkthrough are in the
-[technical design tour](docs/technical-tour.md).
-Scenario origins and integrity fields are documented in
-[data and scenario provenance](docs/data-and-scenario-provenance.md).
+Run `timeout-recovery`, inspect its trace, then compare the report with the
+committed baseline. The [technical design tour](docs/technical-tour.md) covers
+grading, approval races, idempotency boundaries, corrupted-evidence checks,
+and possible storage and worker extensions. Scenario origins and integrity
+fields are recorded in [data and scenario provenance](docs/data-and-scenario-provenance.md).
 
 ## License
 

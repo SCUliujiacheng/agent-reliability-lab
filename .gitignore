@@ -20,6 +20,7 @@ web/node_modules/
 web/dist/
 web/coverage/
 .playwright-cli/
+docs/architecture/*.visual-check.*
 .env
 .env.*
 !.env.example

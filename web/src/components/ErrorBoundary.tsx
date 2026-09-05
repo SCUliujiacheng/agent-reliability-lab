@@ -31,7 +31,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <main className="fatal-state" role="alert">
           <p className="eyebrow">Unexpected interface error</p>
           <h1>Dashboard interrupted</h1>
-          <p>The current view could not be rendered. API and trace details were not exposed.</p>
+          <p>The current view could not be rendered. Reload the dashboard to try again.</p>
           <button type="button" className="primary-button" onClick={this.reset}>Reload dashboard</button>
         </main>
       );

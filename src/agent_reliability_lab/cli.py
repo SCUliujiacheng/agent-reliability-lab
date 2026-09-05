@@ -248,7 +248,7 @@ def _fail(error: Exception, json_output: bool) -> NoReturn:
 
 
 def _evaluation_table(report: EvaluationReport) -> str:
-    lines = ["mode      correctness  recovery  invalid accepted"]
+    lines = ["mode      correctness  recovery  accepted invalid outputs"]
     for mode, result in report.modes.items():
         metrics = result.metrics
         recovery = (

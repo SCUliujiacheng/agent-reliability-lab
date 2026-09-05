@@ -65,7 +65,7 @@ export function Overview({
           <div>
             <p className="eyebrow">API unavailable</p>
             <h2>Dashboard data could not be loaded</h2>
-            <p>Check the local API and retry. No partial response data has been displayed.</p>
+            <p>Check that the local API is running, then try again.</p>
           </div>
           <button type="button" className="primary-button" onClick={onRetry}>Retry dashboard</button>
         </section>

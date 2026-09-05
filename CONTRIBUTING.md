@@ -44,7 +44,7 @@ uv run arl gate artifacts/current-report.json --baseline benchmarks/baseline-rep
 - Keep provider redirects disabled and retain remote-HTTPS, total-deadline,
   response-size, and credential-redaction tests.
 - Keep FastAPI and Nginx trusted-host configuration aligned.
-- Regenerate the baseline, benchmark prose, architecture receipt, and real
+- Regenerate the baseline, benchmark prose, architecture diagram, and real
   browser screenshots after claim-relevant changes.
 - Document any benchmark denominator or semantic change.
 
@@ -59,7 +59,7 @@ uv run arl eval scenarios/incident-response \
   --baseline-output benchmarks/baseline-report.json
 ```
 
-Explain why the suite hash changed and which headline denominators are affected.
+Explain why the suite hash changed and which reported denominators are affected.
 Provider-backed or nondeterministic evaluations should use a separate suite and
 must not silently replace the deterministic baseline.
 
