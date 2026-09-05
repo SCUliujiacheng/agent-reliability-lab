@@ -1,5 +1,7 @@
 # Agent Reliability Lab
 
+**English** | [简体中文](https://github.com/SCUliujiacheng/agent-reliability-lab-zh)
+
 > A local-first, evidence-driven test bench for building tool-using agents that
 > retry safely, pause for human approval, survive reconstruction, and fail
 > closed when their reliability claims cannot be verified.
