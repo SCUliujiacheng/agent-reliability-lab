@@ -16,7 +16,7 @@
   <a href="#measured-result">Measured result</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#run-it-locally">Run locally</a> ·
-  <a href="#five-minute-technical-tour">Technical tour</a>
+  <a href="#follow-one-run-end-to-end">Technical tour</a>
 </p>
 
 <p align="center">
