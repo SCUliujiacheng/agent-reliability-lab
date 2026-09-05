@@ -90,7 +90,7 @@ jobs:
       - name: Enforce reliability and baseline gates
         run: >-
           uv run arl gate artifacts/ci-report.json
-          --baseline benchmarks/baseline-report.json
+          --baseline benchmarks/baseline-report.json --json
 
   containers:
     name: Container and Compose smoke

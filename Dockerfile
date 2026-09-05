@@ -32,8 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src ./src
 COPY scenarios ./scenarios
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable \
-    && uv cache clean
+    uv sync --locked --no-dev --no-editable
 
 USER 10001:10001
 
