@@ -90,9 +90,16 @@ def install_error_handlers(app: FastAPI) -> None:
 class RequestBodyLimitMiddleware:
     """Enforce the byte bound on both declared and streamed request bodies."""
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int,
+        cors_origins: tuple[str, ...] = (),
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.cors_origins = frozenset(cors_origins)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -100,17 +107,8 @@ class RequestBodyLimitMiddleware:
             return
         declared = _content_length(scope)
         if declared is not None and declared > self.max_bytes:
-            await error_response(
-                413,
-                "request_too_large",
-                "Request body exceeds the configured limit.",
-                {"limit_bytes": self.max_bytes},
-            )(scope, receive, send)
+            await self._reject(scope, receive, send)
             return
-        if scope.get("method") not in {"POST", "PUT", "PATCH"}:
-            await self.app(scope, receive, send)
-            return
-
         parts: list[bytes] = []
         received = 0
         while True:
@@ -121,12 +119,7 @@ class RequestBodyLimitMiddleware:
             part = message.get("body", b"")
             received += len(part)
             if received > self.max_bytes:
-                await error_response(
-                    413,
-                    "request_too_large",
-                    "Request body exceeds the configured limit.",
-                    {"limit_bytes": self.max_bytes},
-                )(scope, receive, send)
+                await self._reject(scope, receive, send)
                 return
             parts.append(part)
             if not message.get("more_body", False):
@@ -147,6 +140,19 @@ class RequestBodyLimitMiddleware:
 
         await self.app(scope, replay, send)
 
+    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
+        response = error_response(
+            413,
+            "request_too_large",
+            "Request body exceeds the configured limit.",
+            {"limit_bytes": self.max_bytes},
+        )
+        origin = _header_value(scope, b"origin")
+        if origin is not None and origin in self.cors_origins:
+            response.headers["access-control-allow-origin"] = origin
+            response.headers.add_vary_header("Origin")
+        await response(scope, receive, send)
+
 
 def _content_length(scope: Scope) -> int | None:
     for name, value in scope.get("headers", ()):
@@ -155,6 +161,13 @@ def _content_length(scope: Scope) -> int | None:
                 return int(value)
             except ValueError:
                 return None
+    return None
+
+
+def _header_value(scope: Scope, target: bytes) -> str | None:
+    for name, value in scope.get("headers", ()):
+        if name.lower() == target:
+            return bytes(value).decode("latin-1")
     return None
 
 

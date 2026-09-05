@@ -33,22 +33,26 @@ network request, GPU, or paid service.
 
 The contrast comes from a first-attempt timeout and rate limit. Resilient mode
 records the failure, retries within policy, and reaches the declared outcome;
-fragile mode stops after one attempt. See [benchmark results](docs/benchmark-results.md)
-for denominators, grader definitions, provenance, and limitations.
+fragile mode stops after one attempt. Inspect the
+[machine-readable baseline](benchmarks/baseline-report.json),
+[benchmark results](docs/benchmark-results.md), and
+[gate/provenance contract](docs/data-and-scenario-provenance.md) for the exact
+denominators, grader definitions, reconstruction rules, and limitations.
 
 ## What is implemented
 
 - **Durable orchestration** — explicit run states, checkpoints, optimistic
   version checks, execution leases, restart-safe resume, and terminal-state
-  enforcement.
+  enforcement. Externally visible run transitions and their audit events share
+  one SQLite transaction.
 - **Bounded agent execution** — each run permits at most 64 new policy calls by
   default (configurable from 1 to 1024). Each slot is reserved durably before
   invocation, while tool retries remain attempts within one logical action;
   exhaustion is persisted and traced as `action_budget_exhausted` before
   another policy call can occur.
 - **Schema-first tool boundary** — registered tools only, strict Pydantic input
-  and output validation, bounded timeouts/retries, deterministic fault injection,
-  idempotency keys, and cached results.
+  and output validation, at most five attempts and 60 seconds per handler
+  attempt, deterministic fault injection, idempotency keys, and cached results.
 - **Approval bound to the reviewed action** — the API exposes a sanitized
   pending-action descriptor with the action step, SHA-256 fingerprint, tool
   name, and arguments. SQLite accepts a decision atomically only while that
@@ -60,8 +64,10 @@ for denominators, grader definitions, provenance, and limitations.
 - **Operational surface** — FastAPI with bounded requests, exact trusted hosts,
   and stable application-route errors; Typer CLI; React/TypeScript dashboard;
   JSON trace export; containers; and CI.
-- **Privacy-aware telemetry** — secrets and authorization fields are recursively
-  redacted before persistence; the API publishes narrower trace DTOs.
+- **Privacy-aware telemetry** — trace payloads and tool results are recursively
+  sanitized before persistence, and the API publishes narrower DTOs. Durable
+  pending-action arguments stay exact for reconstruction and must not contain
+  credentials.
 
 ## Architecture
 
@@ -216,9 +222,11 @@ request one strict `AgentAction` from an OpenAI-compatible
 accepted only for `localhost` or loopback-IP development. Redirects are
 disabled. The default connect and read limits are 5 and 30 seconds, with a
 45-second overall HTTP request/read deadline. Responses are bounded while
-streaming to 1 MiB by default (validated maximum: 16 MiB). The API key is loaded
-from the caller-selected environment variable and its value is included in
-trace redaction.
+streaming to 1 MiB by default (validated maximum: 16 MiB). The adapter requests
+identity encoding and rejects encoded responses before reading their bodies, so
+decompression cannot occur ahead of the byte ceiling. The API key is loaded
+from the caller-selected environment variable, included in trace redaction, and
+rejected if a provider reflects it inside a returned action.
 
 ```python
 from agent_reliability_lab.providers.openai_compatible import (

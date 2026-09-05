@@ -74,6 +74,69 @@ def _approve(
     )
 
 
+@pytest.mark.parametrize(
+    ("overrides", "field_name"),
+    [
+        ({"max_attempts": True}, "max_attempts"),
+        ({"max_attempts": 6}, "max_attempts"),
+        ({"max_attempts": 10**1000}, "max_attempts"),
+        ({"timeout_seconds": True}, "timeout_seconds"),
+        ({"timeout_seconds": float("nan")}, "timeout_seconds"),
+        ({"timeout_seconds": float("inf")}, "timeout_seconds"),
+        ({"timeout_seconds": 61.0}, "timeout_seconds"),
+        ({"timeout_seconds": 10**1000}, "timeout_seconds"),
+        ({"initial_delay_seconds": True}, "initial_delay_seconds"),
+        ({"initial_delay_seconds": float("nan")}, "initial_delay_seconds"),
+        ({"initial_delay_seconds": float("inf")}, "initial_delay_seconds"),
+        ({"initial_delay_seconds": 6.0}, "initial_delay_seconds"),
+        ({"initial_delay_seconds": 10**1000}, "initial_delay_seconds"),
+    ],
+)
+def test_tool_definition_rejects_unbounded_retry_policy(
+    overrides: dict[str, object], field_name: str
+) -> None:
+    """Invalid declarations cannot create unbounded waits or retry loops."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Input, __: ToolExecutionContext) -> Output:
+        return Output()
+
+    with pytest.raises(ValueError, match=field_name):
+        ToolDefinition("bounded", Input, Output, handler, **overrides)  # type: ignore[arg-type]
+
+
+def test_tool_definition_accepts_documented_retry_policy_caps() -> None:
+    """The finite cap values remain available to explicitly declared tools."""
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    class Output(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Input, __: ToolExecutionContext) -> Output:
+        return Output()
+
+    definition = ToolDefinition(
+        "bounded",
+        Input,
+        Output,
+        handler,
+        max_attempts=5,
+        timeout_seconds=60.0,
+        initial_delay_seconds=5.0,
+    )
+
+    assert definition.max_attempts == 5
+    assert definition.timeout_seconds == 60.0
+    assert definition.initial_delay_seconds == 5.0
+
+
 def test_gateway_retries_a_transient_timeout_and_records_attempts(
     tmp_path: Path,
 ) -> None:

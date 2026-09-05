@@ -151,6 +151,32 @@ async def test_streaming_body_cannot_bypass_false_content_length(
     assert_error(response, 413, "request_too_large")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["GET", "DELETE"])
+async def test_all_http_methods_enforce_streamed_body_limit(
+    app: FastAPI, method: str
+) -> None:
+    """Nominally bodyless methods cannot bypass streamed byte accounting."""
+
+    async def chunks() -> AsyncIterator[bytes]:
+        for _ in range(70):
+            yield b"x" * 1024
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://localhost"
+        ) as api:
+            response = await api.request(
+                method,
+                "/health",
+                content=chunks(),
+                headers={"content-length": "1"},
+            )
+
+    assert_error(response, 413, "request_too_large")
+
+
 def test_default_is_same_origin_and_allowlist_is_exact(tmp_path) -> None:
     from fastapi.testclient import TestClient
 
@@ -210,6 +236,7 @@ def test_allowed_origin_is_preserved_on_declared_oversize_error(tmp_path) -> Non
 
     assert_error(response, 413, "request_too_large")
     assert response.headers["access-control-allow-origin"] == origin
+    assert "Origin" in response.headers["vary"]
 
 
 @pytest.mark.asyncio
@@ -242,6 +269,65 @@ async def test_allowed_origin_is_preserved_on_streamed_oversize_error(
 
     assert_error(response, 413, "request_too_large")
     assert response.headers["access-control-allow-origin"] == origin
+    assert "Origin" in response.headers["vary"]
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_cannot_bypass_streamed_body_limit(tmp_path) -> None:
+    from agent_reliability_lab.api.app import create_app
+
+    origin = "https://dashboard.example"
+    app = create_app(make_settings(tmp_path, cors_origins=(origin,)))
+
+    async def chunks() -> AsyncIterator[bytes]:
+        for _ in range(70):
+            yield b"x" * 1024
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://localhost"
+        ) as api:
+            response = await api.request(
+                "OPTIONS",
+                "/v1/runs",
+                content=chunks(),
+                headers={
+                    "content-length": "1",
+                    "origin": origin,
+                    "access-control-request-method": "POST",
+                },
+            )
+
+    assert_error(response, 413, "request_too_large")
+    assert response.headers["access-control-allow-origin"] == origin
+    assert "Origin" in response.headers["vary"]
+
+
+def test_oversize_error_does_not_reflect_untrusted_origin(tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from agent_reliability_lab.api.app import create_app
+
+    app = create_app(
+        make_settings(
+            tmp_path,
+            cors_origins=("https://dashboard.example",),
+        )
+    )
+    with TestClient(app, base_url="http://localhost") as api:
+        response = api.request(
+            "OPTIONS",
+            "/v1/runs",
+            content=b"x" * 70_000,
+            headers={
+                "origin": "https://dashboard.example.evil.test",
+                "access-control-request-method": "POST",
+            },
+        )
+
+    assert_error(response, 413, "request_too_large")
+    assert "access-control-allow-origin" not in response.headers
 
 
 @pytest.mark.parametrize(

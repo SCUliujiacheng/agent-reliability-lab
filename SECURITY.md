@@ -20,16 +20,21 @@ minimal reproduction, and any suggested mitigation.
 
 The repository demonstrates local single-node agent orchestration. Inbound HTTP
 is local by default: Compose publishes both services only on loopback, FastAPI
-checks an exact Host allowlist, and Nginx rejects unknown virtual hosts. Browser
-responses include `Content-Security-Policy: frame-ancestors 'none'` and
-`X-Frame-Options: DENY`. Application request bodies and list queries are
-bounded, and configured CORS origins are explicit.
+checks an exact Host allowlist, and Nginx rejects unknown virtual hosts. On the
+Compose path, Nginx adds `Content-Security-Policy: frame-ancestors 'none'` and
+`X-Frame-Options: DENY`; direct Vite or Uvicorn development does not add that
+header layer. Application request bodies on every HTTP method and list queries
+are bounded, and configured CORS origins are explicit.
 
-Only registered, schema-validated tools can execute. Approval requests must
-echo the exact currently pending action step and fingerprint; SQLite verifies
-and records that binding atomically. Pending arguments and trace payloads are
-recursively sanitized. Actor names remain caller-provided labels rather than
-authenticated identities.
+Only registered, schema-validated tools can execute. Tool declarations reject
+non-finite or excessive retry and timing values (at most five attempts, 60
+seconds per handler attempt, and five seconds of initial backoff). Approval
+requests must echo the exact currently pending action step and fingerprint;
+SQLite verifies and records that binding atomically. Public pending-approval
+projections and trace payloads are recursively sanitized. The durable run row
+retains the original pending arguments so the exact action can be reconstructed;
+policies must therefore never place credentials in tool arguments. Actor names
+remain caller-provided labels rather than authenticated identities.
 
 Every run also enforces a bounded policy-call budget (64 by default,
 configurable from 1 to 1024). A slot is reserved in durable state before each
@@ -39,9 +44,12 @@ action selected before the pause rather than reserving twice. Before any call
 beyond the limit, the run fails durably with `action_budget_exhausted`.
 
 The optional provider adapter requires HTTPS for non-loopback destinations,
-disables redirects, enforces connect/read/total deadlines and a streamed
-response-size ceiling, and includes the active API-key value in trace
-redaction. It is not an outbound destination allowlist or network sandbox.
+disables redirects, enforces connect/read/total deadlines, requests identity
+encoding, rejects encoded responses before body iteration, and applies a
+streamed response-size ceiling. The active API-key value is included in trace
+redaction, and any returned action containing that credential is rejected
+before it can reach orchestration or persistence. It is not an outbound
+destination allowlist or network sandbox.
 The generic `Policy` protocol does not add a universal deadline around custom
 implementations; custom policies must bound their own I/O. The action budget
 limits invocation count rather than the duration of one invocation.

@@ -44,17 +44,14 @@ class DurableOrchestrator:
         """Advance an owned run to its next durable stop."""
         if run.status in {RunStatus.QUEUED, RunStatus.WAITING_APPROVAL}:
             previous_status = run.status
-            run = self._save(
+            run = self._save_with_event(
                 run.transition(RunStatus.RUNNING).model_copy(
                     update={"pending_approval": False}
                 ),
                 previous=run,
                 owner_token=owner_token,
-            )
-            self._record(
-                run,
-                "run.running",
-                {"from_status": previous_status},
+                event_type="run.running",
+                event_payload={"from_status": previous_status},
             )
         elif run.status is RunStatus.RUNNING:
             self._record(
@@ -118,8 +115,13 @@ class DurableOrchestrator:
                         },
                     }
                 )
-                run = self._save(terminal, previous=run, owner_token=owner_token)
-                self._record(run, "run.succeeded", cast(JsonValue, run.result or {}))
+                run = self._save_with_event(
+                    terminal,
+                    previous=run,
+                    owner_token=owner_token,
+                    event_type="run.succeeded",
+                    event_payload=cast(JsonValue, terminal.result or {}),
+                )
                 break
             if isinstance(action, FailAction):
                 run = self._terminal_failure(
@@ -167,11 +169,12 @@ class DurableOrchestrator:
                             "pending_action_fingerprint": fingerprint,
                         }
                     )
-                    run = self._save(paused, previous=run, owner_token=owner_token)
-                    self._record(
-                        run,
-                        "run.waiting_approval",
-                        {
+                    run = self._save_with_event(
+                        paused,
+                        previous=run,
+                        owner_token=owner_token,
+                        event_type="run.waiting_approval",
+                        event_payload={
                             "tool_name": action.tool_name,
                             "step": run.current_step,
                             "action_fingerprint": fingerprint,
@@ -212,17 +215,18 @@ class DurableOrchestrator:
                     "updated_at": datetime.now(UTC),
                 }
             )
-            run = self._save(checkpoint, previous=run, owner_token=owner_token)
-            self._record(
-                run,
-                "run.checkpointed",
-                {
-                    "action_step": run.current_step - 1,
+            run = self._save_with_event(
+                checkpoint,
+                previous=run,
+                owner_token=owner_token,
+                event_type="run.checkpointed",
+                event_payload={
+                    "action_step": checkpoint.current_step - 1,
                     "attempt": result.attempts,
-                    "current_step": run.current_step,
+                    "current_step": checkpoint.current_step,
                     "cached": result.cached,
                     "output_digest": _canonical_json_digest(result.output),
-                    "context_digest": _canonical_json_digest(run.context),
+                    "context_digest": _canonical_json_digest(checkpoint.context),
                 },
             )
         return run
@@ -269,6 +273,32 @@ class DurableOrchestrator:
             owner_token=owner_token,
             expected_version=previous.version,
         )
+
+    def _save_with_event(
+        self,
+        changed: Run,
+        *,
+        previous: Run,
+        owner_token: str,
+        event_type: str,
+        event_payload: JsonValue,
+        status: str = "ok",
+    ) -> Run:
+        """Commit one externally visible state change with its audit event."""
+        event = self._recorder.build_event(
+            changed.trace_id,
+            event_type,
+            event_payload,
+            parent_span_id=changed.trace_id,
+            status=status,
+        )
+        saved, _ = self._store.save_run_owned_with_event(
+            changed,
+            event,
+            owner_token=owner_token,
+            expected_version=previous.version,
+        )
+        return saved
 
     def _record(
         self,

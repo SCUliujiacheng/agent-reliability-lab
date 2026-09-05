@@ -92,6 +92,25 @@ def test_untrusted_or_lookalike_hosts_are_rejected(tmp_path: Path, host: str) ->
     assert response.text == "Invalid host header"
 
 
+def test_untrusted_host_is_rejected_before_body_buffering(tmp_path: Path) -> None:
+    app = create_app(make_settings(tmp_path))
+
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.request(
+            "OPTIONS",
+            "/v1/runs",
+            content=b"x" * 70_000,
+            headers={
+                "host": "attacker.example",
+                "origin": "https://dashboard.example",
+                "access-control-request-method": "POST",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.text == "Invalid host header"
+
+
 def test_custom_host_replaces_instead_of_extending_defaults(tmp_path: Path) -> None:
     settings = replace(make_settings(tmp_path), trusted_hosts=("lab.internal",))
     app = create_app(settings)

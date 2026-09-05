@@ -64,10 +64,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
-    app.add_middleware(
-        RequestBodyLimitMiddleware,
-        max_bytes=configured.max_request_body_bytes,
-    )
     if configured.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -76,6 +72,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=["Content-Type"],
         )
+    app.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_bytes=configured.max_request_body_bytes,
+        cors_origins=configured.cors_origins,
+    )
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=list(configured.trusted_hosts),

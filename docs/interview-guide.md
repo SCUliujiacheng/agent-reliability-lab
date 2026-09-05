@@ -24,8 +24,9 @@ every file.
    around the same SQLite database before approval. Allow the action and show
    the single `approval.recorded` event and single write execution.
 4. Export the trace JSON, then run the CLI gate against the committed baseline.
-5. Open the interactive architecture and use the two guided views to contrast
-   the runtime request path with the evaluation path.
+5. Open the interactive architecture and compare the **Interactive run** and
+   **Evaluation gate** guided views; use **Security boundaries** to explain
+   where the guarantees stop.
 
 ## Design decisions worth discussing
 
@@ -66,9 +67,12 @@ makes the artifact auditable and causes corruption to fail closed.
 Only registered tools can run; arbitrary shell execution is absent. Inputs and
 outputs are validated with Pydantic. Traces are sanitized before persistence,
 request bodies are bounded, CORS origins are explicit, Host values use an exact
-allowlist, and Nginx rejects unknown virtual hosts. Browser responses deny
-framing. The optional provider requires remote HTTPS, disables redirects, and
-bounds total time and streamed response bytes while redacting its credential.
+allowlist, and Nginx rejects unknown virtual hosts. Compose browser responses
+deny framing. The optional provider requires remote HTTPS, disables redirects,
+requests identity encoding, rejects encoded responses before body iteration,
+and bounds total time and streamed response bytes. Its credential is redacted,
+and a returned action that reflects the credential is rejected before
+persistence.
 Each run also bounds new policy calls with durable pre-invocation reservations;
 tool retries do not consume extra slots, and exhaustion is persisted before
 another policy call.

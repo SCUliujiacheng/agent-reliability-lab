@@ -6,7 +6,7 @@ import json
 import math
 import os
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -52,12 +52,6 @@ class ProviderHTTPStatusError(ProviderError):
 
 class ProviderResponseTooLargeError(ProviderProtocolError):
     """Raised when a provider response exceeds the configured byte ceiling."""
-
-
-class AsyncPostClient(Protocol):
-    async def post(self, *args: object, **kwargs: object) -> httpx.Response:
-        """Send one HTTP request."""
-        ...
 
 
 class _Function(BaseModel):
@@ -173,7 +167,7 @@ class OpenAICompatiblePolicy:
         self,
         config: OpenAICompatibleConfig,
         *,
-        client: AsyncPostClient | None = None,
+        client: httpx.AsyncClient | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         recorder: TraceRecorder | None = None,
     ) -> None:
@@ -194,7 +188,10 @@ class OpenAICompatiblePolicy:
             body,
             extra_secret_values=provider_secrets,
         )
-        headers = {"content-type": "application/json"}
+        headers = {
+            "content-type": "application/json",
+            "accept-encoding": "identity",
+        }
         if api_key:
             headers["authorization"] = f"Bearer {api_key}"
         timeout = httpx.Timeout(
@@ -228,6 +225,14 @@ class OpenAICompatiblePolicy:
                 extra_secret_values=provider_secrets,
             )
             raise
+        except ProviderProtocolError as error:
+            self._failed(
+                run,
+                "provider_protocol",
+                {"exception_type": type(error).__name__},
+                extra_secret_values=provider_secrets,
+            )
+            raise
         except httpx.HTTPStatusError as error:
             status_code = error.response.status_code
             self._failed(
@@ -247,6 +252,8 @@ class OpenAICompatiblePolicy:
             raw_payload = json.loads(response_body)
             envelope = _CompletionResponse.model_validate(raw_payload)
             action = self._parse_action(envelope)
+            if _contains_secret(action.model_dump(mode="json"), provider_secrets):
+                raise ValueError("provider action contains the active credential")
         except (ValueError, ValidationError, json.JSONDecodeError) as error:
             self._failed(
                 run,
@@ -271,18 +278,8 @@ class OpenAICompatiblePolicy:
         headers: dict[str, str],
         timeout: httpx.Timeout,
     ) -> bytes:
-        if isinstance(self._client, httpx.AsyncClient):
-            return await self._stream_response(self._client, body, headers, timeout)
         if self._client is not None:
-            response = await self._client.post(
-                self._url,
-                json=body,
-                headers=headers,
-                timeout=timeout,
-                follow_redirects=False,
-            )
-            response.raise_for_status()
-            return _bounded_content(response.content, self._config.max_response_bytes)
+            return await self._stream_response(self._client, body, headers, timeout)
         async with httpx.AsyncClient(transport=self._transport) as client:
             return await self._stream_response(client, body, headers, timeout)
 
@@ -391,7 +388,30 @@ class OpenAICompatiblePolicy:
             )
 
 
+def _contains_secret(value: JsonValue, secret_values: set[str]) -> bool:
+    if isinstance(value, dict):
+        return any(
+            _contains_secret(str(key), secret_values)
+            or _contains_secret(item, secret_values)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_secret(item, secret_values) for item in value)
+    if isinstance(value, str):
+        return any(secret and secret in value for secret in secret_values)
+    return False
+
+
 async def _read_bounded_stream(response: httpx.Response, max_bytes: int) -> bytes:
+    content_encoding = response.headers.get("content-encoding")
+    if (
+        content_encoding is not None
+        and content_encoding.strip().casefold() != "identity"
+    ):
+        raise ProviderProtocolError(
+            "provider response content encoding must be identity"
+        )
+
     declared_length = response.headers.get("content-length")
     if declared_length is not None:
         try:
@@ -410,14 +430,6 @@ async def _read_bounded_stream(response: httpx.Response, max_bytes: int) -> byte
             )
         content.extend(chunk)
     return bytes(content)
-
-
-def _bounded_content(content: bytes, max_bytes: int) -> bytes:
-    if len(content) > max_bytes:
-        raise ProviderResponseTooLargeError(
-            "provider response exceeded configured byte limit"
-        )
-    return content
 
 
 def _is_loopback_host(hostname: str) -> bool:

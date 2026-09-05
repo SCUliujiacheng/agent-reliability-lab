@@ -296,15 +296,39 @@ class SQLiteRunStore:
         expected_version: int,
     ) -> tuple[Run, TraceEvent]:
         """Atomically checkpoint an owned run and append its audit event."""
-        if event_value.trace_id != run.trace_id:
+        saved, stored = self.save_run_owned_with_events(
+            run,
+            (event_value,),
+            owner_token=owner_token,
+            expected_version=expected_version,
+        )
+        return saved, stored[0]
+
+    def save_run_owned_with_events(
+        self,
+        run: Run,
+        event_values: Sequence[TraceEvent],
+        *,
+        owner_token: str,
+        expected_version: int,
+    ) -> tuple[Run, tuple[TraceEvent, ...]]:
+        """Atomically checkpoint an owned run and append ordered audit events."""
+        if not event_values:
+            raise ValueError("at least one audit event is required")
+        if any(event_value.trace_id != run.trace_id for event_value in event_values):
             raise ValueError("event trace must match the run trace")
-        clean = event_value.model_copy(
-            update={
-                "payload": sanitize_payload(event_value.payload, self._secret_values),
-                "attributes": sanitize_payload(
-                    event_value.attributes, self._secret_values
-                ),
-            }
+        clean_events = tuple(
+            event_value.model_copy(
+                update={
+                    "payload": sanitize_payload(
+                        event_value.payload, self._secret_values
+                    ),
+                    "attributes": sanitize_payload(
+                        event_value.attributes, self._secret_values
+                    ),
+                }
+            )
+            for event_value in event_values
         )
         now = self._aware_now().isoformat()
         persisted = _without_execution_lease(
@@ -343,36 +367,39 @@ class SQLiteRunStore:
                         "run execution ownership lost at checkpoint"
                     )
                 raise ConcurrentUpdateError("stale run version")
-            next_sequence = session.execute(
-                insert(TraceCounterRow)
-                .values(trace_id=str(clean.trace_id), next_sequence=1)
-                .on_conflict_do_update(
-                    index_elements=[TraceCounterRow.trace_id],
-                    set_={"next_sequence": TraceCounterRow.next_sequence + 1},
+            stored_events: list[TraceEvent] = []
+            for clean in clean_events:
+                next_sequence = session.execute(
+                    insert(TraceCounterRow)
+                    .values(trace_id=str(clean.trace_id), next_sequence=1)
+                    .on_conflict_do_update(
+                        index_elements=[TraceCounterRow.trace_id],
+                        set_={"next_sequence": TraceCounterRow.next_sequence + 1},
+                    )
+                    .returning(TraceCounterRow.next_sequence)
+                ).scalar_one()
+                stored = clean.model_copy(update={"sequence": next_sequence})
+                session.add(
+                    EventRow(
+                        id=str(stored.id),
+                        trace_id=str(stored.trace_id),
+                        span_id=str(stored.span_id),
+                        parent_span_id=str(stored.parent_span_id)
+                        if stored.parent_span_id
+                        else None,
+                        sequence=next_sequence,
+                        event_type=stored.event_type,
+                        payload=_dump(stored.payload),
+                        attributes=_dump(stored.attributes),
+                        duration_ms=stored.duration_ms,
+                        status=stored.status,
+                        created_at=stored.created_at.isoformat(),
+                    )
                 )
-                .returning(TraceCounterRow.next_sequence)
-            ).scalar_one()
-            stored = clean.model_copy(update={"sequence": next_sequence})
-            session.add(
-                EventRow(
-                    id=str(stored.id),
-                    trace_id=str(stored.trace_id),
-                    span_id=str(stored.span_id),
-                    parent_span_id=str(stored.parent_span_id)
-                    if stored.parent_span_id
-                    else None,
-                    sequence=next_sequence,
-                    event_type=stored.event_type,
-                    payload=_dump(stored.payload),
-                    attributes=_dump(stored.attributes),
-                    duration_ms=stored.duration_ms,
-                    status=stored.status,
-                    created_at=stored.created_at.isoformat(),
-                )
-            )
+                stored_events.append(stored)
             lease = session.get(RunExecutionLeaseRow, str(run.id))
             canonical = _with_execution_lease(persisted, lease)
-        return canonical, stored
+        return canonical, tuple(stored_events)
 
     def get_run(self, run_id: UUID) -> Run | None:
         with self._session() as session:

@@ -4,8 +4,13 @@ import type {
   RunMode,
   RunSummary,
   ScenarioSummary,
+  TraceEvent,
   TracePage,
 } from "./types";
+
+const TRACE_PAGE_SIZE = 100;
+const MAX_TRACE_EVENTS = 10_000;
+const MAX_TRACE_PAGES = Math.ceil(MAX_TRACE_EVENTS / TRACE_PAGE_SIZE);
 
 interface StableErrorEnvelope {
   error: {
@@ -125,10 +130,77 @@ export function getRun(runId: string, signal?: AbortSignal): Promise<RunSummary>
   return requestJson(`/v1/runs/${encodeURIComponent(runId)}`, { signal });
 }
 
-export function getTrace(runId: string, signal?: AbortSignal): Promise<TracePage> {
-  return requestJson(
-    `/v1/runs/${encodeURIComponent(runId)}/trace?limit=100&after_sequence=0`,
-    { signal },
+export async function getTrace(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<TracePage> {
+  const events: TraceEvent[] = [];
+  let afterSequence = 0;
+  let pagesLoaded = 0;
+
+  while (true) {
+    if (pagesLoaded >= MAX_TRACE_PAGES) {
+      throw new ApiClientError(
+        502,
+        "trace_too_large",
+        `The trace exceeds the ${MAX_TRACE_EVENTS}-event dashboard limit.`,
+      );
+    }
+    const page = await requestJson<TracePage>(
+      `/v1/runs/${encodeURIComponent(runId)}/trace?limit=${TRACE_PAGE_SIZE}&after_sequence=${afterSequence}`,
+      { signal },
+    );
+    pagesLoaded += 1;
+    validateTracePage(page, afterSequence);
+    if (events.length + page.events.length > MAX_TRACE_EVENTS) {
+      throw new ApiClientError(
+        502,
+        "trace_too_large",
+        `The trace exceeds the ${MAX_TRACE_EVENTS}-event dashboard limit.`,
+      );
+    }
+    events.push(...page.events);
+    if (!page.has_more) {
+      return { events, next_after_sequence: page.next_after_sequence, has_more: false };
+    }
+    afterSequence = page.next_after_sequence;
+  }
+}
+
+function validateTracePage(page: TracePage, afterSequence: number): void {
+  if (
+    !Array.isArray(page.events)
+    || page.events.length > TRACE_PAGE_SIZE
+    || typeof page.has_more !== "boolean"
+    || !Number.isSafeInteger(page.next_after_sequence)
+  ) {
+    throw invalidTracePage();
+  }
+
+  let expectedSequence = afterSequence;
+  for (const event of page.events) {
+    expectedSequence += 1;
+    if (
+      !isRecord(event)
+      || !Number.isSafeInteger(event.sequence)
+      || event.sequence !== expectedSequence
+    ) {
+      throw invalidTracePage();
+    }
+  }
+  if (
+    page.next_after_sequence !== expectedSequence
+    || (page.has_more && page.events.length === 0)
+  ) {
+    throw invalidTracePage();
+  }
+}
+
+function invalidTracePage(): ApiClientError {
+  return new ApiClientError(
+    502,
+    "invalid_trace_page",
+    "The API returned an inconsistent trace page.",
   );
 }
 

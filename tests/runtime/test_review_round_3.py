@@ -136,9 +136,9 @@ async def test_arbitrary_release_failure_does_not_mask_denial_primary_error(
     app_context: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     waiting = await app_context.runs.start("rollback-approval", "resilient")
-    original_record: Callable[..., object] = app_context.runs._recorder.record
+    original_build: Callable[..., object] = app_context.runs._recorder.build_event
 
-    def failing_denial_record(
+    def failing_denial_build(
         trace_id: UUID,
         event_type: str,
         payload: object,
@@ -146,9 +146,9 @@ async def test_arbitrary_release_failure_does_not_mask_denial_primary_error(
     ) -> object:
         if event_type == "approval.denied":
             raise PrimaryExecutionError("denial audit failed")
-        return original_record(trace_id, event_type, payload, **kwargs)
+        return original_build(trace_id, event_type, payload, **kwargs)
 
-    monkeypatch.setattr(app_context.runs._recorder, "record", failing_denial_record)
+    monkeypatch.setattr(app_context.runs._recorder, "build_event", failing_denial_build)
     monkeypatch.setattr(
         app_context.runs.store, "release_run_execution", release_failure
     )

@@ -230,21 +230,20 @@ class RunService:
         owned = self.store.claim_run_execution(run.id, owner_token=owner_token)
         primary_error: BaseException | None = None
         try:
-            if owned.status is RunStatus.WAITING_APPROVAL:
-                owned = self.store.save_run_owned(
-                    owned.transition(RunStatus.FAILED).model_copy(
-                        update={
-                            "pending_approval": False,
-                            "pending_action": None,
-                            "pending_action_fingerprint": None,
-                            "result": {"code": "approval_denied", "reason": reason},
-                        }
-                    ),
-                    owner_token=owner_token,
-                    expected_version=owned.version,
+            if owned.status is not RunStatus.WAITING_APPROVAL:
+                raise RunExecutionConflictError(
+                    "run is no longer waiting for approval denial"
                 )
-            self._recorder.record(
-                owned.trace_id,
+            terminal = owned.transition(RunStatus.FAILED).model_copy(
+                update={
+                    "pending_approval": False,
+                    "pending_action": None,
+                    "pending_action_fingerprint": None,
+                    "result": {"code": "approval_denied", "reason": reason},
+                }
+            )
+            denial_event = self._recorder.build_event(
+                terminal.trace_id,
                 "approval.denied",
                 {
                     "actor": actor,
@@ -252,15 +251,21 @@ class RunService:
                     "action_step": action_step,
                     "action_fingerprint": action_fingerprint,
                 },
-                parent_span_id=owned.trace_id,
+                parent_span_id=terminal.trace_id,
                 status="error",
             )
-            self._recorder.record(
-                owned.trace_id,
+            failed_event = self._recorder.build_event(
+                terminal.trace_id,
                 "run.failed",
                 {"code": "approval_denied", "reason": reason},
-                parent_span_id=owned.trace_id,
+                parent_span_id=terminal.trace_id,
                 status="error",
+            )
+            owned, _ = self.store.save_run_owned_with_events(
+                terminal,
+                (denial_event, failed_event),
+                owner_token=owner_token,
+                expected_version=owned.version,
             )
         except BaseException as error:
             primary_error = error

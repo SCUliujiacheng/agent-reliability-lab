@@ -1,16 +1,21 @@
 """OpenAI-compatible structured-action policy tests."""
 
 import asyncio
+import gzip
 import json
 from dataclasses import replace
 from pathlib import Path
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
+from typer.testing import CliRunner
 
+from agent_reliability_lab.api.app import create_app
+from agent_reliability_lab.cli import app as cli_app
 from agent_reliability_lab.config import Settings
 from agent_reliability_lab.domain.actions import CallToolAction
-from agent_reliability_lab.domain.runs import Run
+from agent_reliability_lab.domain.runs import Run, RunStatus
 from agent_reliability_lab.domain.scenarios import Scenario
 from agent_reliability_lab.providers.openai_compatible import (
     OpenAICompatibleConfig,
@@ -19,8 +24,11 @@ from agent_reliability_lab.providers.openai_compatible import (
     ProviderProtocolError,
     ProviderTimeoutError,
 )
+from agent_reliability_lab.runtime.service import RunService
 from agent_reliability_lab.storage.store import SQLiteRunStore
 from agent_reliability_lab.telemetry.recorder import TraceRecorder
+from agent_reliability_lab.tools.contracts import ToolRegistry
+from agent_reliability_lab.tools.gateway import ToolGateway
 
 
 def config() -> OpenAICompatibleConfig:
@@ -235,6 +243,41 @@ async def test_provider_stops_streaming_after_response_limit_and_traces_stable_e
     }
 
 
+@pytest.mark.asyncio
+async def test_provider_rejects_compressed_response_before_reading_body() -> None:
+    """Decoded compression must not allocate beyond the raw response boundary."""
+
+    class CountingGzipStream(httpx.AsyncByteStream):
+        def __init__(self) -> None:
+            self.chunks_read = 0
+            self.body = gzip.compress(b"x" * (256 * 1024))
+
+        async def __aiter__(self):  # type: ignore[no-untyped-def]
+            self.chunks_read += 1
+            yield self.body
+
+    body = CountingGzipStream()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"content-encoding": "gzip"},
+            stream=body,
+        )
+
+    bounded = replace(config(), max_response_bytes=64)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ProviderProtocolError, match="content encoding"):
+            await OpenAICompatiblePolicy(bounded, client=client).next_action(
+                Run.new("scenario", "resilient"), scenario()
+            )
+
+    assert requests[0].headers["accept-encoding"] == "identity"
+    assert body.chunks_read == 0
+
+
 @pytest.mark.parametrize("limit", [0, 16 * 1024 * 1024 + 1, True])
 def test_provider_rejects_invalid_response_byte_limits(limit: object) -> None:
     """Invalid byte ceilings must fail before any provider request is possible."""
@@ -285,21 +328,23 @@ def test_provider_rejects_invalid_total_deadline(deadline: float) -> None:
 
 @pytest.mark.asyncio
 async def test_provider_timeout_is_typed_and_uses_explicit_timeout_values() -> None:
-    observed: list[dict[str, object]] = []
+    observed: list[object] = []
 
-    class TimeoutClient:
-        async def post(self, *args: object, **kwargs: object) -> object:
-            observed.append(kwargs)
-            raise httpx.ReadTimeout("late")
+    def timeout_handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request.extensions["timeout"])
+        raise httpx.ReadTimeout("late", request=request)
 
-    policy = OpenAICompatiblePolicy(config(), client=TimeoutClient())
-    with pytest.raises(ProviderTimeoutError, match="timed out"):
-        await policy.next_action(Run.new("scenario", "resilient"), scenario())
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(timeout_handler)
+    ) as client:
+        policy = OpenAICompatiblePolicy(config(), client=client)
+        with pytest.raises(ProviderTimeoutError, match="timed out"):
+            await policy.next_action(Run.new("scenario", "resilient"), scenario())
 
-    timeout = observed[0]["timeout"]
-    assert isinstance(timeout, httpx.Timeout)
-    assert timeout.connect == 0.25
-    assert timeout.read == 1.5
+    timeout = observed[0]
+    assert isinstance(timeout, dict)
+    assert timeout["connect"] == 0.25
+    assert timeout["read"] == 1.5
 
 
 @pytest.mark.asyncio
@@ -328,7 +373,8 @@ async def test_provider_traces_redact_credentials_and_secret_content(
         policy = OpenAICompatiblePolicy(
             config(), client=client, recorder=TraceRecorder(store, {"top-secret"})
         )
-        await policy.next_action(run, scenario())
+        with pytest.raises(ProviderProtocolError, match="structured action"):
+            await policy.next_action(run, scenario())
 
     serialized = json.dumps(
         [event.model_dump(mode="json") for event in store.list_events(run.trace_id)]
@@ -356,10 +402,11 @@ async def test_provider_automatically_redacts_its_api_key_from_success_events(
     response = full_response(
         {
             "content": json.dumps(
-                {"type": "finish", "summary": api_key, "outcome": "done"}
+                {"type": "finish", "summary": "done", "outcome": "done"}
             )
         }
     )
+    response["system_fingerprint"] = api_key
 
     async with httpx.AsyncClient(transport=json_transport(response)) as client:
         action = await OpenAICompatiblePolicy(
@@ -372,6 +419,78 @@ async def test_provider_automatically_redacts_its_api_key_from_success_events(
     )
     assert api_key not in serialized
     assert "[REDACTED]" in serialized
+
+
+@pytest.mark.asyncio
+async def test_provider_reflected_api_key_never_leaves_the_policy_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Returning an action with the live credential must fail before persistence."""
+    api_key = "provider-reflected-end-to-end-secret"
+    monkeypatch.setenv("TEST_PROVIDER_KEY", api_key)
+    database = tmp_path / "provider-boundary.db"
+    settings = Settings(data_dir=tmp_path, database_path=database)
+    store = SQLiteRunStore.from_settings(settings)
+    store.create_schema()
+    recorder = TraceRecorder(store)
+    selected_scenario = scenario()
+    response = full_response(
+        {
+            "content": json.dumps(
+                {"type": "finish", "summary": api_key, "outcome": "done"}
+            )
+        }
+    )
+
+    async with httpx.AsyncClient(transport=json_transport(response)) as client:
+        policy = OpenAICompatiblePolicy(config(), client=client, recorder=recorder)
+        service = RunService(
+            store,
+            recorder,
+            ToolGateway(store, recorder, ToolRegistry()),
+            lambda _: selected_scenario,
+            policies={"provider": policy},
+        )
+        run = await service.start(
+            selected_scenario.id, "resilient", policy_name="provider"
+        )
+
+    stored = store.get_run(run.id)
+    assert stored is not None
+    raw_events = store.list_events(run.trace_id)
+    sqlite_run = stored.model_dump_json()
+    sqlite_events = json.dumps(
+        [event.model_dump(mode="json") for event in raw_events], sort_keys=True
+    )
+    event_types = {event.event_type for event in raw_events}
+    store.close()
+
+    with TestClient(create_app(settings), base_url="http://localhost") as api:
+        api_run = api.get(f"/v1/runs/{run.id}")
+        api_trace = api.get(f"/v1/runs/{run.id}/trace?limit=100")
+    assert api_run.status_code == 200
+    assert api_trace.status_code == 200
+
+    exported = CliRunner().invoke(
+        cli_app,
+        ["export-trace", str(run.id), "--database", str(database), "--json"],
+    )
+    assert exported.exit_code == 0, exported.output
+
+    surfaces = {
+        "sqlite_run": sqlite_run,
+        "sqlite_events": sqlite_events,
+        "api_run": api_run.text,
+        "api_trace": api_trace.text,
+        "trace_export": exported.stdout,
+    }
+    leaked_surfaces = {
+        name for name, serialized in surfaces.items() if api_key in serialized
+    }
+    assert leaked_surfaces == set()
+    assert run.status is RunStatus.FAILED
+    assert "policy.action" not in event_types
+    assert "run.succeeded" not in event_types
 
 
 @pytest.mark.asyncio
