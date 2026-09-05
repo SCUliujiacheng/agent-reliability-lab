@@ -65,8 +65,8 @@ The baseline records nearest-rank local `perf_counter_ns` measurements:
 
 | Metric | Fragile | Resilient |
 | --- | ---: | ---: |
-| P50 case latency | 34.4 ms | 44.7 ms |
-| P95 case latency | 77.6 ms | 68.7 ms |
+| P50 case latency | 32.0498 ms | 39.8309 ms |
+| P95 case latency | 85.4523 ms | 63.8965 ms |
 
 These values help detect gross regressions in one environment. They are not a
 cross-machine throughput benchmark and are not enforced as headline quality
@@ -91,10 +91,16 @@ Baseline provenance:
 - report/schema version: `6`
 - grader: `exact-v6`
 - policy: `scripted`
-- suite hash: `21d15bd476344661681b5740ffcced169460a2201c9d945cc8e575ece983a23c`
-- Git revision: `5477bd965b254378849941c8a06888c202a373eb`
+- suite hash: `46135ff3279835cf7159261565203651f19aad29959591a9fcea4aba9381697f`
+- Git revision: `f8b27dd205844867c7ad06158b8d370eb6f4e84c`
 - Git dirty: `false`
 - credential cost: `$0`
+- baseline file SHA-256: `8bab5a85c33dd1dcbf357ac21eef81b9a73fdd6f0b7f98847bc52be748bf4d04`
+- baseline file size: `171,915` bytes
+- generated at (UTC): `2026-09-05T10:59:05.800603Z`
 
-The baseline is regenerated after release-source changes so its clean Git
-revision points at the exact evaluated implementation.
+The hash and size are calculated from the canonical LF-normalized Git blob, so
+local platform line-ending conversion cannot change the published evidence.
+The `v0.1.0` baseline is intentionally retained in `v0.1.1` to prove that the
+security dependency refresh did not change the frozen scenarios' reliability
+results. Its clean Git revision points at the exact evaluated implementation.

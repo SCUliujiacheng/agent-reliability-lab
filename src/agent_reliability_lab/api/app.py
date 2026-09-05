@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Agent Reliability Lab",
-        version="0.1.0",
+        version="0.1.1",
         lifespan=lifespan,
     )
     if configured.cors_origins:
