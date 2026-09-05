@@ -1,23 +1,45 @@
-# Agent Reliability Lab
+<h1 align="center">Agent Reliability Lab</h1>
 
-**English** | [简体中文](https://github.com/SCUliujiacheng/agent-reliability-lab-zh)
+<p align="center">
+  <strong>A local-first lab for agents that retry safely, pause for human approval, survive reconstruction, and fail closed.</strong>
+</p>
 
-> A local-first, evidence-driven test bench for building tool-using agents that
-> retry safely, pause for human approval, survive reconstruction, and fail
-> closed when their reliability claims cannot be verified.
+<p align="center">
+  <a href="https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://www.python.org/"><img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&amp;logoColor=white"></a>
+  <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-TypeScript-149ECA?logo=react&amp;logoColor=white"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/License-MIT-0F766E"></a>
+</p>
 
-[![CI](https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Node 22.20+](https://img.shields.io/badge/node-22.20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-0F766E.svg)](LICENSE)
+<p align="center">
+  <a href="#why-i-built-this">Why I built this</a> ·
+  <a href="#measured-result">Measured result</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#credential-free-quickstart">Run locally</a> ·
+  <a href="#five-minute-technical-tour">Technical tour</a>
+</p>
 
-![Agent Reliability Lab dashboard](docs/screenshots/dashboard-overview.png)
+<p align="center">
+  <strong>English</strong> · <a href="https://github.com/SCUliujiacheng/agent-reliability-lab-zh">简体中文</a>
+</p>
 
-Most agent demos show a happy path. This repository makes failure behavior the
-main artifact: exact scenario contracts, a durable state machine, schema-first
+## Why I built this
+
+I built Agent Reliability Lab because I am more interested in what an agent
+does after something goes wrong than in another happy-path demo. A system feels
+trustworthy only when its retry policy, approvals, reconstruction, and evidence
+survive failure—not merely when one run succeeds.
+
+That question shaped the whole repository. Failure behavior is the main
+artifact: exact scenario contracts, a durable state machine, schema-first
 tools, ordered sanitized traces, human approval, reproducible fault injection,
 and a regression gate that reconstructs metrics from evidence instead of
 trusting a summary JSON file.
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-overview.png" alt="Agent Reliability Lab dashboard showing the benchmark comparison and trace evidence" width="100%">
+</p>
+<p align="center"><sub>The dashboard runs the same versioned evaluation exposed by the CLI and API.</sub></p>
 
 ## Measured result
 
@@ -41,7 +63,10 @@ fragile mode stops after one attempt. Inspect the
 [gate/provenance contract](docs/data-and-scenario-provenance.md) for the exact
 denominators, grader definitions, reconstruction rules, and limitations.
 
-## What is implemented
+## How I turned the problem into a system
+
+I translated that reliability question into seven explicit engineering
+boundaries:
 
 - **Durable orchestration** — explicit run states, checkpoints, optimistic
   version checks, execution leases, restart-safe resume, and terminal-state
@@ -73,7 +98,9 @@ denominators, grader definitions, reconstruction rules, and limitations.
 
 ## Architecture
 
-![Agent Reliability Lab architecture](docs/architecture/agent-reliability-lab-architecture.visual-check.1440x900.light.png)
+<p align="center">
+  <img src="docs/architecture/agent-reliability-lab-architecture.visual-check.1440x900.light.png" alt="Agent Reliability Lab system architecture" width="100%">
+</p>
 
 The browser/API path and CLI/evaluation path share the same deterministic runtime
 contracts. SQLite is the single-node coordination and evidence boundary; the
@@ -94,7 +121,10 @@ uv sync --dev --locked
 npm ci --prefix web
 
 # Terminal 1: API
-uv run uvicorn agent_reliability_lab.api.app:create_app --factory --host 127.0.0.1 --port 8000
+uv run uvicorn agent_reliability_lab.api.app:create_app \
+  --factory \
+  --host 127.0.0.1 \
+  --port 8000
 
 # Terminal 2: dashboard (proxies /v1 to the API)
 npm --prefix web run dev
@@ -182,14 +212,30 @@ curl http://127.0.0.1:8000/v1/scenarios
 RUN_JSON="$(curl -sS -X POST http://127.0.0.1:8000/v1/runs \
   -H "content-type: application/json" \
   -d '{"scenario_id":"approval-reconstruction","mode":"resilient"}')"
-RUN_ID="$(printf '%s' "$RUN_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
-ACTION_STEP="$(printf '%s' "$RUN_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["pending_approval"]["action_step"])')"
-ACTION_FINGERPRINT="$(printf '%s' "$RUN_JSON" | python -c 'import json,sys; print(json.load(sys.stdin)["pending_approval"]["action_fingerprint"])')"
+RUN_ID="$(
+  printf '%s' "$RUN_JSON" |
+    python -c 'import json,sys; print(json.load(sys.stdin)["id"])'
+)"
+
+read -r ACTION_STEP ACTION_FINGERPRINT < <(
+  printf '%s' "$RUN_JSON" |
+    python -c '
+import json, sys
+approval = json.load(sys.stdin)["pending_approval"]
+print(approval["action_step"], approval["action_fingerprint"])
+'
+)
 
 # Approve using the returned run ID and its current pending_approval descriptor
 curl -X POST "http://127.0.0.1:8000/v1/runs/$RUN_ID/approvals" \
   -H "content-type: application/json" \
-  -d "{\"actor\":\"demo-reviewer\",\"allow\":true,\"action_step\":$ACTION_STEP,\"action_fingerprint\":\"$ACTION_FINGERPRINT\",\"reason\":\"trace verified\"}"
+  -d "{
+    \"actor\": \"demo-operator\",
+    \"allow\": true,
+    \"action_step\": $ACTION_STEP,
+    \"action_fingerprint\": \"$ACTION_FINGERPRINT\",
+    \"reason\": \"trace verified\"
+  }"
 
 curl "http://127.0.0.1:8000/v1/runs/$RUN_ID/trace?limit=100"
 
@@ -268,8 +314,10 @@ npm --prefix web run lint
 npm --prefix web run typecheck
 npm --prefix web run build
 
-uv run arl eval scenarios/incident-response --output artifacts/final-report.json
-uv run arl gate artifacts/final-report.json --baseline benchmarks/baseline-report.json
+uv run arl eval scenarios/incident-response \
+  --output artifacts/final-report.json
+uv run arl gate artifacts/final-report.json \
+  --baseline benchmarks/baseline-report.json
 ```
 
 GitHub Actions runs independent Python, frontend, benchmark, and container jobs.
@@ -291,7 +339,7 @@ src/agent_reliability_lab/
 web/            React + TypeScript evidence dashboard
 scenarios/      frozen synthetic YAML suite
 benchmarks/     committed baseline report
-docs/           architecture, benchmark semantics, provenance, and interview guide
+docs/           architecture, benchmark semantics, provenance, and technical tour
 ```
 
 ## Deliberate limitations
@@ -309,20 +357,23 @@ docs/           architecture, benchmark semantics, provenance, and interview gui
   duration.
 - Tool side effects are simulated. This is not a production incident executor.
 
-These constraints keep the project runnable by a reviewer and make each claim
+These constraints keep the project locally reproducible and make each claim
 precise. The next production-oriented steps would be PostgreSQL migrations,
 authenticated approvals, distributed leases/workers, OpenTelemetry export, and
 a separate statistically grounded provider evaluation track.
 
-## Interview shortcuts
+## Five-minute technical tour
 
-- Why exact trace-derived graders instead of LLM-as-judge?
-- How do approval races converge across two application instances?
-- Where does idempotency stop, and what would change for an external side effect?
-- How does the gate distinguish a product regression from corrupted evidence?
-- Which contracts survive a move from SQLite to PostgreSQL and worker queues?
+The shortest route through the design starts with five questions:
 
-Answers and a five-minute demo path are in the [interview guide](docs/interview-guide.md).
+1. Why use exact trace-derived graders instead of LLM-as-judge?
+2. How do approval races converge across two application instances?
+3. Where does idempotency stop for an external side effect?
+4. How does the gate distinguish a product regression from corrupted evidence?
+5. Which contracts survive a move to PostgreSQL and worker queues?
+
+The answers and a concrete walkthrough are in the
+[technical design tour](docs/technical-tour.md).
 Scenario origins and integrity fields are documented in
 [data and scenario provenance](docs/data-and-scenario-provenance.md).
 

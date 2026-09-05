@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Agent Reliability Lab is a portfolio and research demonstration. Security fixes
+Agent Reliability Lab is a research and engineering demonstration. Security fixes
 are applied to the latest commit on `main`; older snapshots are not maintained
 as supported releases.
 
