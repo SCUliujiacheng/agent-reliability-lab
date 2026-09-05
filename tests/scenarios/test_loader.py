@@ -11,7 +11,7 @@ from agent_reliability_lab.scenarios.loader import (
 
 def write_scenario(tmp_path: Path, *, fault_type: str = "timeout") -> Path:
     path = tmp_path / "incident.yaml"
-    path.write_text(
+    content = (
         """id: api-latency
 version: 1
 initial_context:
@@ -36,9 +36,9 @@ faults:
         + fault_type
         + """
 approval_supplied: false
-""",
-        encoding="utf-8",
+"""
     )
+    path.write_bytes(content.encode("utf-8"))
     return path
 
 
@@ -61,5 +61,5 @@ def test_loader_builds_actions_and_hashes_exact_file_bytes(tmp_path: Path) -> No
     assert scenario.faults[0].type == "timeout"
     assert (
         scenario_sha256(path)
-        == "7ef9ad51cf85509aca8e3ec4cbe7656c1f209828e817c39ea2b0529030d2578b"
+        == "1fb6ba86037c98588cbf4684c838cfab6c05e75131f8d401a415c43b29fbac59"
     )
