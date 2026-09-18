@@ -8,7 +8,7 @@ version = "0.1.1"
 description = "A local-first platform for evaluating tool-using agent reliability."
 requires-python = ">=3.12"
 dependencies = [
-  "anyio==4.10.0",
+  "anyio==4.14.2",
   "fastapi==0.141.1",
   "httpx>=0.28,<1",
   "pydantic>=2.10,<3",
