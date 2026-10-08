@@ -91,7 +91,7 @@ describe("App workflows", () => {
     await user.selectOptions(screen.getByLabelText("Mode"), "resilient");
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
-    expect(await screen.findByRole("heading", { name: "timeout-recovery" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Retry after timeout" })).toBeVisible();
     expect(screen.getByText("Succeeded")).toBeVisible();
     expect(await screen.findByText(/timeout injected/)).toBeVisible();
   });
@@ -373,7 +373,7 @@ describe("App workflows", () => {
 
     await user.click(await screen.findByRole("button", { name: /Open run approval-a/ }));
     await user.click(await screen.findByRole("button", { name: "Allow action" }));
-    await user.click(screen.getByRole("button", { name: "Back to Runs" }));
+    await user.click(screen.getByRole("button", { name: "Back to runs" }));
     await user.click(await screen.findByRole("button", { name: /Open run run-b/ }));
     expect(await screen.findByRole("heading", { name: "run-b" })).toBeVisible();
 
@@ -416,7 +416,7 @@ describe("App workflows", () => {
     await user.click(runEvaluation);
     await user.click(runEvaluation);
 
-    expect(screen.getByRole("button", { name: "Running evaluation…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Evaluating…" })).toBeDisabled();
     expect(
       fetchMock.mock.calls.filter(
         ([url, init]) => String(url) === "/v1/evaluations" && init?.method === "POST",
@@ -429,7 +429,7 @@ describe("App workflows", () => {
     });
 
     expect(
-      within(screen.getByRole("region", { name: "Reliability metrics" })).getByText("91.7%"),
+      within(screen.getByRole("region", { name: "Evaluation comparison" })).getByText("91.7%"),
     ).toBeVisible();
     expect(screen.queryByText("No evaluations yet")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Evaluation complete");
@@ -473,11 +473,11 @@ describe("App workflows", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "Dashboard data could not be loaded" }),
+      await screen.findByRole("heading", { name: "Run data could not be loaded" }),
     ).toBeVisible();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.queryByText("offline secret")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Retry dashboard" }));
+    await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
   });
 
@@ -490,28 +490,41 @@ describe("App workflows", () => {
     expect(result.violations).toEqual([]);
   });
 
-  it("explains the investigation path before showing the benchmark rail", async () => {
+  it("puts runnable scenarios and recent runs before the evaluation table", async () => {
     vi.stubGlobal("fetch", overviewFetch({ runs: [runFixture()] }));
     render(<App />);
 
-    expect(
-      await screen.findByRole("heading", { name: "What happens after an agent fails?" }),
-    ).toBeVisible();
-    expect(screen.getByText("Run the frozen cases, compare fragile with resilient, then open the trace."))
-      .toBeVisible();
-    expect(screen.getByRole("link", { name: "Run scenario" })).toBeVisible();
-    const rail = screen.getByRole("region", { name: "Reliability metrics" });
-    for (const label of [
-      "Resilient correctness",
-      "Recovery",
-      "Fragile correctness",
-      "Accepted invalid outputs",
-    ]) {
-      expect(within(rail).getByText(label)).toBeVisible();
-    }
-    expect(within(rail).getByText("91.7%")).toBeVisible();
-    expect(within(rail).getByText("58.4%")).toBeVisible();
-    expect(within(rail).getByText("0.0%")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Runs", level: 1 })).toBeVisible();
+    const launcher = screen.getByRole("region", { name: "Run a scenario" });
+    const runs = screen.getByRole("region", { name: "Recent runs" });
+    const comparison = screen.getByRole("region", { name: "Evaluation comparison" });
+    expect(launcher.compareDocumentPosition(runs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(runs.compareDocumentPosition(comparison) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(comparison).getByRole("row", { name: /Task correctness/ })).toHaveTextContent("91.7%");
+    expect(within(comparison).getByText("58.4%")).toBeVisible();
+    expect(within(comparison).getByText("0.0%")).toBeVisible();
+    expect(screen.getByRole("option", { name: "Retry after timeout" })).toHaveValue("timeout-recovery");
+  });
+
+  it("returns from a run detail to the selected navigation section", async () => {
+    const base = overviewFetch({ runs: [runFixture()] });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `/v1/runs/${runFixture().id}`) return response(runFixture());
+      if (url.endsWith("/trace?limit=100&after_sequence=0")) {
+        return response({ events: traceFixture, next_after_sequence: 7, has_more: false });
+      }
+      return base(input, init);
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Open run timeout-recovery/ }));
+    expect(await screen.findByRole("heading", { name: "Retry after timeout" })).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Evaluations" }));
+    const comparison = await screen.findByRole("region", { name: "Evaluation comparison" });
+    await waitFor(() => expect(comparison).toHaveFocus());
+    expect(screen.getByRole("heading", { name: "Runs", level: 1 })).toBeVisible();
   });
 
   it("keeps launcher controls keyboard operable", async () => {
@@ -533,6 +546,6 @@ describe("App workflows", () => {
     const start = await screen.findByRole("button", { name: "Start run" });
     start.focus();
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("heading", { name: "timeout-recovery" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Retry after timeout" })).toBeVisible();
   });
 });

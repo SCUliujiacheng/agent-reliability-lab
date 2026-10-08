@@ -6,9 +6,9 @@ scenarios in two execution modes:
 - **fragile**: one attempt per tool call;
 - **resilient**: bounded retries for errors classified as transient.
 
-The committed baseline is an evidence artifact, not a claim about arbitrary
-agents or production workloads. It uses the local scripted policy, synthetic
-tools, and exact graders; it makes no network or model-provider calls.
+The committed baseline records these six cases using a local scripted policy,
+simulated tools, and deterministic graders. It makes no network or model calls,
+and its results apply to this suite.
 
 ## Measured result
 
@@ -47,8 +47,8 @@ per mode—one timeout and one rate limit.
 
 For each case, the grader computes the longest common subsequence between the
 expected and observed logical tool sequences, divided by the longer sequence.
-The published value is the macro-average over six cases. Retry attempts do not
-masquerade as extra logical calls.
+The published value is the macro-average over six cases. Retry attempts belong
+to the same logical call and do not add items to the sequence.
 
 ### Invalid-output rate
 
@@ -59,7 +59,7 @@ Both modes detect and reject it at the typed tool boundary. The reported count
 is therefore zero accepted invalid outputs, while the report retains separate
 detected and rejected counts.
 
-## Latency is diagnostic, not a performance claim
+## Local latency measurements
 
 The baseline records nearest-rank local `perf_counter_ns` measurements:
 
@@ -101,6 +101,6 @@ Baseline provenance:
 
 The hash and size are calculated from the canonical LF-normalized Git blob, so
 local platform line-ending conversion cannot change the published evidence.
-The `v0.1.0` baseline is intentionally retained in `v0.1.1` to prove that the
-security dependency refresh did not change the frozen scenarios' reliability
-results. Its clean Git revision points at the exact evaluated implementation.
+Version `v0.1.1` retains the `v0.1.0` baseline to check whether dependency updates
+change the frozen scenarios' results. Its clean Git revision identifies the
+evaluated implementation.

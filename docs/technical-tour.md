@@ -1,134 +1,69 @@
-# Agent Reliability Lab technical design tour
+# Runtime implementation notes
 
-Start with `timeout-recovery`, then open its trace. It is the quickest way to
-see what this project is checking: the first log lookup times out, resilient
-mode records that failure, retries inside its boundary, and leaves a checkpoint
-and result behind. Then hand the report to the CLI gate and compare it with the
-committed baseline.
+`timeout-recovery` is the shortest path through the implementation. The first log lookup receives an injected timeout. Resilient mode records the failure, retries, and saves a checkpoint and result. The case checks that the retry belongs to the same logical action, the failed attempt remains visible, and the grader can recover that sequence from the trace.
 
-## Walk through it once
+## Follow a run
 
-1. Open the dashboard, click **Run evaluation**, and inspect the returned
-   report. Start with the 66.7% versus 100% correctness result and the exact
-   six-case denominator.
-2. Launch `timeout-recovery` in resilient mode. Open the trace and follow the
-   injected timeout, failed attempt, retry, successful attempt, checkpoint, and
-   terminal result in sequence.
-3. Launch `approval-reconstruction`. Rebuild the service around the same SQLite
-   database before approval. Allow the action and show
-   the single `approval.recorded` event and single write execution.
-4. Export the trace JSON, then run the CLI gate against the committed baseline.
-5. Open the interactive architecture and compare the **Interactive run** and
-   **Evaluation gate** guided views; use **Security boundaries** to explain
-   where the guarantees stop.
+```text
+uv run arl run scenarios/incident-response/timeout-recovery.yaml --mode resilient --database .arl-data/demo.db --json
+```
 
-## Design decisions and guarantee boundaries
+Copy the returned `run_id` and export its trace:
 
-### Why a scripted policy?
+```text
+uv run arl export-trace <run-id> --database .arl-data/demo.db --output artifacts/trace.json
+```
 
-The default benchmark isolates orchestration reliability from model variance,
-credentials, rate limits, and cost. This makes failures reproducible and lets
-the exact grader prove a narrow claim. An OpenAI-compatible policy adapter is
-available as an integration boundary, but its behavior is deliberately not
-folded into the fixed benchmark result.
+The expected order is an injected timeout, failed attempt, retry, successful attempt, checkpoint, and terminal result. The dashboard presents the same kind of record; see the [trace screenshot](screenshots/trace-detail.png).
 
-### Why SQLite?
+`approval-reconstruction` checks a different path. A run pauses for approval, the service is rebuilt around the same SQLite database, and approval resumes the action. Repeated identical decisions should leave one `approval.recorded` event and one write execution.
 
-The project needs durable reconstruction, transactions, uniqueness, and
-compare-and-swap behavior without an external service. SQLite with WAL is a
-good single-node demonstration substrate. The code treats persistence as the
-coordination boundary, including cross-instance approval decisions, while the
-documentation explicitly avoids claiming multi-node production readiness.
+## Fixed policies and tools
 
-### What happens to duplicate approvals?
+The current experiment checks orchestration: given the same actions and faults, what do the two execution modes do? A scripted policy and local tools make those conditions repeatable and give the grader deterministic outputs to compare.
 
-This is not a claim of universal exactly-once behavior on a network. The tested
-case is narrower: two application instances share one SQLite database and send
-decisions for the same waiting action. Approval recording is transactional, run
-transitions use optimistic state/version checks, high-risk writes need an
-idempotency key, and tool results are cached behind a claim lease. In that case,
-matching concurrent decisions converge on one durable decision and one write;
-stale or conflicting decisions are rejected.
+The optional OpenAI-compatible adapter provides a model integration point, but does not participate in this benchmark. A real model changes action selection and tool order. Evaluating it would require recorded model and prompt versions and repeated runs to observe variation.
 
-### Why not trust summary metrics in JSON?
+## What SQLite stores
 
-An evaluation artifact can be edited. The gate validates schema and provenance,
-rebuilds metrics from trace-level evidence, checks scenario/action identities
-and deterministic outputs, and then applies exact-fraction thresholds. This
-makes the artifact auditable and causes corruption to fail closed.
+Run states, checkpoints, approvals, and events share one database. A state transition and its event are written in one transaction. Optimistic version checks prevent stale updates; WAL supports local concurrent access. Reconstructed application objects can read the pending work back from storage.
 
-### What is the security boundary?
+The storage layer also coordinates execution leases and idempotent results. Tests cover application instances sharing one SQLite database. They do not cover multiple database nodes, queues, or database migrations.
 
-Only registered tools can run; arbitrary shell execution is absent. Inputs and
-outputs are validated with Pydantic. Traces are sanitized before persistence,
-request bodies are bounded, CORS origins are explicit, Host values use an exact
-allowlist, and Nginx rejects unknown virtual hosts. Compose browser responses
-deny framing. The optional provider requires remote HTTPS, disables redirects,
-requests identity encoding, rejects encoded responses before body iteration,
-and bounds total time and streamed response bytes. Its credential is redacted,
-and a returned action that reflects the credential is rejected before
-persistence.
-Each run also bounds new policy calls with durable pre-invocation reservations;
-tool retries do not consume extra slots, and exhaustion is persisted before
-another policy call.
-Application routes use narrow DTOs and stable JSON errors; the outer Host
-boundary can instead return a plain 400 or empty Nginx 444. These controls
-reduce risk, but the demo has no authentication or tenant isolation and must
-not be exposed as a production control plane.
+## Concurrent approvals
 
-## Possible extensions
+An approval must include the current `action_step` and its SHA-256 fingerprint. One transaction records the decision only while the run is waiting for that action. Matching concurrent decisions resolve to one stored record. If two decisions conflict, one request receives HTTP 409.
 
-### Multi-process execution
+High-risk writes require an idempotency key, and tool results are cached after acquiring an execution lease. The tested result is one decision and one simulated write across two application instances sharing a SQLite database. That does not imply exactly-once behavior for arbitrary external services.
 
-Durable state can move to PostgreSQL, while local claim timing would need
-database-backed leases based on server time. A queue can resume work without
-changing the idempotency and trace contracts. Migrations and contention/load
-tests belong before horizontal scale.
+The `actor` field is currently a request string. Authentication, authorization, and approval expiry are not implemented.
 
-### Real-model evaluation
+## Call budget and cancellation
 
-The frozen scripted suite remains the orchestration control. A separate
-provider-backed suite would record model and prompt versions, repeat cases over
-seeds, and report statistical quality separately from deterministic checks.
+Each new policy invocation reserves a durable slot before the call. The default is 64 calls, configurable from 1 to 1024. Cancellation and reconstruction do not reset that allowance. A call returning `finish` consumes its slot; tool retries do not consume additional slots.
 
-### Approval replay
+Approval resumes the action selected before the pause without reserving again. On exhaustion, the runtime writes the terminal state and a `run.failed` event containing `action_budget_exhausted`, then stops making policy calls.
 
-The client echoes the run's current action step and fingerprint. One SQLite
-transaction records a decision only while the run is waiting for that exact
-action; stale targets are rejected and exact duplicates converge.
-Authentication, authorization, trusted actor identity, and approval expiry are
-not implemented.
+The budget bounds call count, not call duration. Custom `Policy` implementations must limit their own I/O. The optional HTTP adapter has a 45-second total deadline.
 
-### Action budget
+## Recomputing reports
 
-Each new policy call reserves one durable slot before invocation, so
-cancellation cannot reset the allowance. A returned `finish` consumes that
-reservation; tool retries do not. A pending approval resumes the action chosen
-before the pause without another reservation. At the limit, the runtime writes
-the terminal state and `run.failed` with `action_budget_exhausted`, without one
-more policy call.
+A JSON report can be edited, leaving its summary inconsistent with its trace. The gate checks scenario and action identity, event order, uniqueness, and deterministic outputs before recomputing metrics and comparing them with the baseline. Inconsistent evidence produces an infrastructure error instead of `PASS`.
 
-### Concurrent approvals
+See [scenario and report provenance](data-and-scenario-provenance.md) for identity and hash rules, and [benchmark results](benchmark-results.md) for metric denominators.
 
-The tests create two application objects over one SQLite database and submit
-competing decisions. Identical decisions are idempotent. If the decisions
-conflict, only one is stored and the other request receives HTTP 409.
+## Interface and data limits
 
-### Further experiments
+Only registered tools with valid Pydantic inputs can run. Outputs are validated again, stored payloads are recursively redacted, and API responses contain fewer fields than internal events.
 
-I would keep PostgreSQL migrations, authenticated users and RBAC, distributed
-workers, OpenTelemetry export, property-based state-machine tests, and
-real-model evaluation in separate experiments rather than folding them into
-the six fixed cases here.
+Request bodies are bounded, CORS origins are configured explicitly, the API checks Host values, and Nginx rejects unknown virtual hosts. Compose browser responses deny framing. Application routes return stable JSON errors, while the outer Host check may return a plain 400 or an empty Nginx 444.
 
-## Scope and limits
+The optional model adapter constrains remote HTTPS, redirects, response encoding, total time, and response bytes; see [local development](local-development.md). These controls do not add authentication or tenant isolation, and tool side effects remain simulated.
 
-- Six synthetic scenarios cannot represent real-world incident diversity.
-- The benchmark policy is scripted, so no claim is made about LLM reasoning
-  quality.
-- SQLite and in-process execution target a local single-node demo.
-- There is no authentication, authorization, tenancy, or secrets manager.
-- Tool side effects are simulated; this is not a production incident executor.
+## Separate follow-up experiments
 
-I stopped at a single node because it is enough to observe retries, approvals,
-and reconstruction. Distributed behavior needs a separate set of experiments.
+Multiple workers would require database leases, server-side time, and a recovery queue, followed by contention and failure-timing tests. A PostgreSQL migration also needs schema migrations and load tests.
+
+For real models, the scripted suite can remain a control while a separate suite records model and prompt versions, repeats runs, and reports deterministic checks alongside quality statistics. These experiments answer different questions and should have separate results.
+
+The [architecture diagram](architecture/agent-reliability-lab-architecture.html) shows the component relationships.

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { LoadState, RunMode, ScenarioSummary } from "../types";
+import { scenarioLabel } from "../presentation";
 
 interface ScenarioLauncherProps {
   scenarios: ScenarioSummary[];
@@ -55,8 +56,9 @@ export function ScenarioLauncher({
         onChange={(event) => setSelectedScenario(event.target.value)}
         disabled={launching}
       >
-        {scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.id}</option>)}
+        {scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenarioLabel(scenario.id)}</option>)}
       </select>
+      <p className="scenario-reference">{current.id}</p>
 
       <label htmlFor="mode-select">Mode</label>
       <select
@@ -65,8 +67,8 @@ export function ScenarioLauncher({
         onChange={(event) => setMode(event.target.value as RunMode)}
         disabled={launching}
       >
-        <option value="resilient">Resilient</option>
-        <option value="fragile">Fragile</option>
+        <option value="resilient">Resilient · with recovery</option>
+        <option value="fragile">Fragile · no recovery</option>
       </select>
 
       <dl className="launcher-facts">

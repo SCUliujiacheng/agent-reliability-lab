@@ -32,7 +32,7 @@ function present(event: TraceEvent, retry: boolean, recovered: boolean): TracePr
       return { title: "Agent started", meta: "Run entered execution", tone: "active" };
     case "tool.attempt.started":
       return retry
-        ? { title: `Retry attempt ${attempt} · ${tool}`, meta: "Tool execution", tone: "active" }
+        ? { title: `${tool} · attempt ${attempt} (retry)`, meta: "Tool execution", tone: "active" }
         : { title: `${tool} · attempt ${attempt}`, meta: "Tool execution", tone: "neutral" };
     case "fault.injected":
       return {
@@ -270,7 +270,7 @@ export function TraceWaterfall({ events }: TraceWaterfallProps) {
     return (
       <div className="state-panel trace-empty">
         <strong>No trace events yet</strong>
-        <p>Events will appear as the agent advances through the scenario.</p>
+        <p>Calls will appear here when the run starts.</p>
       </div>
     );
   }

@@ -21,14 +21,14 @@ describe("RunDetail", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "timeout-recovery" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Retry after timeout" })).toBeVisible();
     expect(screen.getByText("Succeeded")).toBeVisible();
     for (const term of ["Mode", "Attempts", "Outcome", "Duration"]) {
       expect(screen.getByText(term)).toBeVisible();
     }
     expect(screen.getByText("11111111-1111-1111-1111-111111111111")).toBeVisible();
     expect(screen.getByRole("button", { name: "Export trace" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Back to Runs" }));
+    await user.click(screen.getByRole("button", { name: "Back to runs" }));
     await user.click(screen.getByRole("button", { name: "Run again" }));
     expect(onBack).toHaveBeenCalledOnce();
     expect(onRunAgain).toHaveBeenCalledOnce();

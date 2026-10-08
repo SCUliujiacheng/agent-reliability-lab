@@ -10,7 +10,7 @@ describe("TraceWaterfall", () => {
 
     const rows = screen.getAllByTestId("trace-row").map((row) => row.textContent ?? "");
     const timeout = rows.findIndex((row) => row.includes("timeout injected"));
-    const retry = rows.findIndex((row) => row.includes("Retry attempt 2"));
+    const retry = rows.findIndex((row) => row.includes("attempt 2 (retry)"));
     const recovered = rows.findIndex((row) => row.includes("recovered"));
     expect(timeout).toBeGreaterThan(-1);
     expect(retry).toBeGreaterThan(timeout);
@@ -26,7 +26,7 @@ describe("TraceWaterfall", () => {
       expect.stringContaining("search_recent_logs · attempt 1"),
       expect.stringContaining("timeout injected"),
       expect.stringContaining("search_recent_logs · tool_timeout"),
-      expect.stringContaining("Retry attempt 2 · search_recent_logs"),
+      expect.stringContaining("search_recent_logs · attempt 2 (retry)"),
       expect.stringContaining("search_recent_logs · recovered"),
       expect.stringContaining("Run checkpointed"),
     ]);
@@ -98,7 +98,7 @@ describe("TraceWaterfall", () => {
 
     expect(screen.getByText("search_recent_logs · attempt 2")).toBeVisible();
     expect(screen.getByText("search_recent_logs · completed")).toBeVisible();
-    expect(screen.queryByText(/Retry/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/retry/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/recovered/)).not.toBeInTheDocument();
   });
 
@@ -143,7 +143,7 @@ describe("TraceWaterfall", () => {
 
     expect(screen.getByText("search_recent_logs · attempt 2")).toBeVisible();
     expect(screen.getByText("search_recent_logs · completed")).toBeVisible();
-    expect(screen.queryByText(/Retry/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/retry/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/recovered/)).not.toBeInTheDocument();
   });
 
@@ -159,7 +159,7 @@ describe("TraceWaterfall", () => {
       />,
     );
 
-    expect(screen.getByText("Retry attempt 2 · search_recent_logs")).toBeVisible();
+    expect(screen.getByText("search_recent_logs · attempt 2 (retry)")).toBeVisible();
     expect(screen.getByText("search_recent_logs · completed")).toBeVisible();
     expect(screen.queryByText(/recovered/)).not.toBeInTheDocument();
   });

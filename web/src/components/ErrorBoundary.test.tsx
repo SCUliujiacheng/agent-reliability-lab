@@ -24,8 +24,8 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Dashboard interrupted");
-    await user.click(screen.getByRole("button", { name: "Reload dashboard" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("This view could not be loaded");
+    await user.click(screen.getByRole("button", { name: "Reload" }));
     expect(screen.getByText("Recovered content")).toBeVisible();
   });
 });

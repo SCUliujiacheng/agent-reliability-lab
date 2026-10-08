@@ -1,5 +1,6 @@
 import type { LoadState, PendingApproval, RunSummary, TraceEvent } from "../types";
 import { StatusMark } from "./StatusMark";
+import { scenarioLabel } from "../presentation";
 import { TraceWaterfall } from "./TraceWaterfall";
 
 export type MutationState = "idle" | "pending" | "success" | "error";
@@ -47,7 +48,8 @@ export function RunDetail({
     <main className="detail-page" id="runs">
       <div className="detail-toolbar">
         <button type="button" className="back-button" onClick={onBack}>
-          <span aria-hidden="true">←</span> Back to Runs
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m10 5-7 7 7 7M3 12h18" /></svg>
+          Back to runs
         </button>
         <div className="detail-actions">
           <button type="button" className="secondary-button" onClick={() => exportTrace(run, events)}>Export trace</button>
@@ -57,8 +59,8 @@ export function RunDetail({
 
       <header className="detail-header">
         <div>
-          <p className="eyebrow">Run detail</p>
-          <h1>{run.scenario_id}</h1>
+          <h1>{scenarioLabel(run.scenario_id)}</h1>
+          {scenarioLabel(run.scenario_id) !== run.scenario_id ? <p className="scenario-reference">{run.scenario_id}</p> : null}
           <p className="run-reference">{run.id}</p>
         </div>
         <StatusMark status={run.status} />
@@ -74,9 +76,8 @@ export function RunDetail({
       {run.status === "waiting_approval" && run.approval_required && approval ? (
         <section className="approval-panel" aria-labelledby="approval-title">
           <div>
-            <p className="eyebrow">Human checkpoint</p>
-            <h2 id="approval-title">Action awaiting approval</h2>
-            <p>Review this exact side effect before recording a decision.</p>
+            <h2 id="approval-title">Pending approval</h2>
+            <p>Check the tool and arguments before allowing this action.</p>
             <dl className="approval-details">
               <div><dt>Tool</dt><dd><code>{approval.tool_name}</code></dd></div>
               <div><dt>Action</dt><dd>Step {approval.action_step}</dd></div>
@@ -99,8 +100,7 @@ export function RunDetail({
       <section className="detail-trace" aria-labelledby="trace-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Execution trace</p>
-            <h2 id="trace-title">Event waterfall</h2>
+            <h2 id="trace-title">Execution trace</h2>
           </div>
           <span>{events.length} events</span>
         </div>

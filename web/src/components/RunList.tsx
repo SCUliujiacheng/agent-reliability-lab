@@ -1,5 +1,6 @@
 import type { LoadState, RunSummary } from "../types";
 import { StatusMark } from "./StatusMark";
+import { scenarioLabel } from "../presentation";
 
 interface RunListProps {
   runs: RunSummary[];
@@ -67,13 +68,17 @@ export function RunList({ runs, state, onSelect, onRetry }: RunListProps) {
                 <button
                   type="button"
                   className="run-id-button"
+                  title={run.id}
                   aria-label={`Open run ${run.scenario_id} ${run.id}`}
                   onClick={() => onSelect?.(run.id)}
                 >
                   {run.id}
                 </button>
               </td>
-              <td data-label="Scenario">{run.scenario_id}</td>
+              <td data-label="Scenario">
+                {scenarioLabel(run.scenario_id)}
+                {scenarioLabel(run.scenario_id) !== run.scenario_id ? <span className="wire-label">{run.scenario_id}</span> : null}
+              </td>
               <td data-label="Mode"><span className="mode-label">{run.mode}</span></td>
               <td data-label="Status"><StatusMark status={run.status} /></td>
               <td data-label="Attempts">{run.attempt_count}</td>

@@ -1,6 +1,5 @@
 import type { EvaluationReport, LoadState, RunMode, RunSummary, ScenarioSummary } from "../types";
 import { EvaluationComparison } from "./EvaluationComparison";
-import { MetricCard } from "./MetricCard";
 import { RunList } from "./RunList";
 import { ScenarioLauncher } from "./ScenarioLauncher";
 
@@ -17,10 +16,6 @@ interface OverviewProps {
   onRetry: () => void;
 }
 
-function formatRate(value: number | null | undefined): string {
-  return value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
-}
-
 export function Overview({
   state,
   runs,
@@ -33,128 +28,69 @@ export function Overview({
   onEvaluate,
   onRetry,
 }: OverviewProps) {
-  const resilient = evaluation?.modes.resilient.metrics;
-  const fragile = evaluation?.modes.fragile.metrics;
-  const header = (
-    <header className="overview-header">
-      <div>
-        <p className="eyebrow">Agent Reliability Lab</p>
-        <h1>What happens after an agent fails?</h1>
-        <p>Run the frozen cases, compare fragile with resilient, then open the trace.</p>
-      </div>
-      <div className="overview-header__actions">
-        <span className="environment-label"><span aria-hidden="true" /> Local API</span>
-        <button
-          type="button"
-          className="primary-button"
-          disabled={evaluating || state !== "ready"}
-          onClick={onEvaluate}
-        >
-          {evaluating ? "Running evaluation…" : "Run evaluation"}
-        </button>
-        <a className="secondary-button header-action" href="#scenarios">Run scenario</a>
-      </div>
-    </header>
+  const evaluationAction = (
+    <button
+      type="button"
+      className="secondary-button"
+      disabled={evaluating || state !== "ready"}
+      onClick={onEvaluate}
+    >
+      {evaluating ? "Evaluating…" : "Run evaluation"}
+    </button>
   );
-
-  if (state === "error") {
-    return (
-      <main className="overview-page" id="overview">
-        {header}
-        <section className="overview-error" role="alert">
-          <div>
-            <p className="eyebrow">API unavailable</p>
-            <h2>Dashboard data could not be loaded</h2>
-            <p>Check that the local API is running, then try again.</p>
-          </div>
-          <button type="button" className="primary-button" onClick={onRetry}>Retry dashboard</button>
-        </section>
-      </main>
-    );
-  }
 
   return (
     <main className="overview-page" id="overview">
-      {header}
+      <header className="overview-header">
+        <h1>Runs</h1>
+        <p>Choose a fault scenario and inspect its calls, retries, and result.</p>
+      </header>
 
-      <section className="metrics-grid" aria-label="Reliability metrics">
-        <MetricCard
-          label="Resilient correctness"
-          value={formatRate(resilient?.task_correctness_rate)}
-          detail={evaluation ? "Latest evaluation" : "No evaluation report"}
-          tone="positive"
-        />
-        <MetricCard
-          label="Recovery"
-          value={formatRate(resilient?.recovery_rate)}
-          detail="Transient faults recovered"
-          tone="positive"
-        />
-        <MetricCard
-          label="Fragile correctness"
-          value={formatRate(fragile?.task_correctness_rate)}
-          detail="Latest evaluation"
-          tone="fragile"
-        />
-        <MetricCard
-          label="Accepted invalid outputs"
-          value={formatRate(resilient?.invalid_output_rate)}
-          detail="Resilient execution"
-          tone={resilient?.invalid_output_rate === 0 ? "positive" : "fragile"}
-        />
-      </section>
-
-      {evaluation ? (
-        <EvaluationComparison report={evaluation} />
-      ) : (
-        <section className="comparison comparison--empty" id="evaluations">
-          <p className="eyebrow">Latest evaluation</p>
-          <h2>No evaluations yet</h2>
-          <p>Run the frozen catalog suite to populate the benchmark comparison.</p>
+      {state === "error" ? (
+        <section className="overview-error" role="alert">
+          <div>
+            <h2>Run data could not be loaded</h2>
+            <p>Check that the local API is running, then try again.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={onRetry}>Retry</button>
         </section>
+      ) : (
+        <div className="workspace-grid">
+          <section className="launcher-panel" id="scenarios" aria-labelledby="launcher-title">
+            <div className="section-heading">
+              <h2 id="launcher-title">Run a scenario</h2>
+            </div>
+            <ScenarioLauncher
+              scenarios={scenarios}
+              state={state}
+              launching={launching}
+              onStart={onStart}
+              onRetry={onRetry}
+            />
+          </section>
+
+          <section className="runs-panel" id="runs" aria-labelledby="recent-runs-title">
+            <div className="section-heading">
+              <h2 id="recent-runs-title">Recent runs</h2>
+              <span>{runs.length} runs</span>
+            </div>
+            <RunList runs={runs} state={state} onSelect={onSelectRun} onRetry={onRetry} />
+          </section>
+        </div>
       )}
 
-      <div className="dashboard-grid">
-        <section className="runs-panel" id="runs" aria-labelledby="recent-runs-title">
+      {evaluation && state !== "error" ? (
+        <EvaluationComparison report={evaluation} action={evaluationAction} />
+      ) : (
+        <section className="comparison comparison--empty" id="evaluations" aria-labelledby="comparison-title">
           <div className="section-heading">
-            <div>
-              <p className="eyebrow">Execution history</p>
-              <h2 id="recent-runs-title">Recent runs</h2>
-            </div>
-            <span>{runs.length} visible</span>
+            <h2 id="comparison-title">Evaluation comparison</h2>
+            {evaluationAction}
           </div>
-          <RunList runs={runs} state={state} onSelect={onSelectRun} onRetry={onRetry} />
+          <p>{state === "error" ? "Connect to the API to run an evaluation." : "No evaluations yet"}</p>
+          {state !== "error" ? <p className="section-note">Run the same fixed scenarios in both modes to compare their results.</p> : null}
         </section>
-
-        <aside className="launcher-panel" id="scenarios" aria-labelledby="launcher-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Start with one fixed case</p>
-              <h2 id="launcher-title">Pick a scenario</h2>
-            </div>
-          </div>
-          <ScenarioLauncher
-            scenarios={scenarios}
-            state={state}
-            launching={launching}
-            onStart={onStart}
-            onRetry={onRetry}
-          />
-        </aside>
-
-        <section className="trace-preview" aria-labelledby="trace-preview-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Then read the trace</p>
-              <h2 id="trace-preview-title">Open a run and follow what happened</h2>
-            </div>
-          </div>
-          <div className="preview-steps" aria-hidden="true">
-            <span /><span /><span /><span />
-          </div>
-          <p>The overview waits until you pick a run before loading its events.</p>
-        </section>
-      </div>
+      )}
     </main>
   );
 }

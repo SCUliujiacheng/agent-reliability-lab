@@ -1,12 +1,12 @@
 # Data and scenario provenance
 
-Agent Reliability Lab is intentionally self-contained. The default demo and
-benchmark use no scraped corpus, production incident data, customer records,
-or hidden model-generated labels.
+The default demo and benchmark use the repository's synthetic scenarios and
+simulated tools. Inputs, fault rules, and expected outcomes are stored with each
+case; scoring needs no production incident data or model judge.
 
 ## What the repository contains
 
-- Six hand-authored YAML scenarios under `scenarios/incident-response/`.
+- Six fixed YAML scenarios under `scenarios/incident-response/`.
 - A deterministic in-memory incident backend with typed inputs and outputs.
 - Explicit fault rules that activate at a named tool, logical action, and
   attempt number.
@@ -65,10 +65,10 @@ increasing sequence numbers and retain the minimum payload needed to explain:
 Stored and exported payloads pass through recursive redaction. Authorization,
 token, secret, password, private-key, API-key, and credential field variants,
 plus configured secret values, are replaced before persistence. Metric names
-such as `prompt_tokens` and `token_count` remain available. The API exposes a
-deliberately narrower trace DTO than the internal event model.
+such as `prompt_tokens` and `token_count` remain available. API traces expose
+fewer fields than the internal event model.
 
-## Reproduction contract
+## Reproduce
 
 ```bash
 uv sync --dev --locked
@@ -80,7 +80,7 @@ The scripted benchmark is deterministic in behavior, but runtime UUIDs,
 timestamps, and latency measurements vary. Baseline normalization preserves
 claim-relevant evidence while keeping version-controlled provenance explicit.
 
-## Extending the suite responsibly
+## Adding a scenario
 
 New scenarios should introduce one clearly named behavior, declare exact
 expected outcomes, and add tests for both the scenario loader and the gate.

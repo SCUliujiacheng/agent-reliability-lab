@@ -104,7 +104,22 @@ function Dashboard() {
 
   return (
     <div className="app-shell">
-      <Navigation />
+      <Navigation onNavigate={(anchor) => {
+        if (selectedRunId !== null) {
+          selectRun(null);
+          setMutationState("idle");
+          setNotice("");
+          overview.refresh();
+        }
+        window.requestAnimationFrame(() => {
+          const target = document.getElementById(anchor.slice(1));
+          if (target) {
+            target.tabIndex = -1;
+            target.focus({ preventScroll: true });
+            target.scrollIntoView?.({ block: "start" });
+          }
+        });
+      }} />
       <div className="app-content">
         {notice ? <MutationNotice message={notice} onDismiss={dismissNotice} /> : null}
         {selectedRunReady && detail.run ? (
