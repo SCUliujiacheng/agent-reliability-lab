@@ -9,6 +9,7 @@ def test_security_critical_dependencies_meet_patched_versions() -> None:
     """The lockfile must not reintroduce versions covered by known advisories."""
 
     minimum_versions = {
+        "anyio": "4.14.2",
         "fastapi": "0.141.1",
         "starlette": "1.3.1",
         "pytest": "9.0.3",
