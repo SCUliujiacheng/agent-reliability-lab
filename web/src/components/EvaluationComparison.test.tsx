@@ -9,7 +9,7 @@ describe("EvaluationComparison", () => {
 
     expect(screen.getByText("58.4%")).toBeVisible();
     expect(screen.getByText("91.7%")).toBeVisible();
-    expect(screen.getByText("+33.3 percentage points")).toBeVisible();
+    expect(screen.getByText("+33.3 pp")).toBeVisible();
     expect(screen.getAllByText("Improved").length).toBeGreaterThan(0);
   });
 

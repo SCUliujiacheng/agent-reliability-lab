@@ -1,358 +1,89 @@
-<h1 align="center">Agent Reliability Lab</h1>
+# Agent Reliability Lab
 
-<p align="center">
-  <strong>Six fixed failure scenarios for checking retries, approvals, restarts, and the traces they leave.</strong>
-</p>
+Six repeatable scenarios for tool retries, interrupted runs, and approvals.
 
-<p align="center">
-  <a href="https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://www.python.org/"><img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&amp;logoColor=white"></a>
-  <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-TypeScript-149ECA?logo=react&amp;logoColor=white"></a>
-  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/License-MIT-0F766E"></a>
-</p>
+[简体中文](https://github.com/SCUliujiacheng/agent-reliability-lab-zh) · [Results](docs/benchmark-results.md) · [Implementation notes](docs/technical-tour.md) · [CI](https://github.com/SCUliujiacheng/agent-reliability-lab/actions/workflows/ci.yml)
 
-<p align="center">
-  <a href="#what-i-wanted-to-see-after-a-failure">The question</a> ·
-  <a href="#measured-result">Measured result</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#run-it-locally">Run locally</a> ·
-  <a href="#follow-one-run-end-to-end">Technical tour</a>
-</p>
+Retrying a timed-out read is straightforward. A restart just after a write, or two approvals arriving for the same action, leaves harder questions: what has already happened, where should execution resume, and which action did the operator approve?
 
-<p align="center">
-  <strong>English</strong> · <a href="https://github.com/SCUliujiacheng/agent-reliability-lab-zh">简体中文</a>
-</p>
+This repository reduces those questions to six repeatable scenarios: normal execution, timeout, rate limit, invalid input, malformed output, and reconstruction around a pending approval. A scripted policy and simulated tools keep the inputs fixed. Runs, tool attempts, state changes, and approvals are stored in SQLite so the evaluator can reconstruct what happened.
 
-## What I wanted to see after a failure
+![Scenario and evaluation dashboard](docs/screenshots/dashboard-overview.png)
 
-Most agent demos stop once the happy path works. I wanted to look at the part
-that usually gets skipped: what happens after a tool call fails? Can the run
-say where it stopped, resume without doing the risky thing twice, and leave a
-record that someone else can inspect?
+## Results
 
-This repository is where I rerun those cases. It saves state, tool attempts,
-approval decisions, and traces; the evaluator then rebuilds its result from
-those records. The current scope is local, single-node, and synthetic. It is
-not a production incident executor.
+The same suite runs in two modes. `fragile` stops after a tool failure; `resilient` retries transient failures within a bounded policy. The default benchmark uses no model, API key, GPU, or network request.
 
-<p align="center">
-  <img src="docs/screenshots/dashboard-overview.png" alt="Agent Reliability Lab dashboard showing the benchmark comparison and trace evidence" width="100%">
-</p>
-<p align="center"><sub>The dashboard, CLI, and API all run the same six scenarios.</sub></p>
+| Metric | Fragile | Resilient |
+| --- | ---: | ---: |
+| Scenarios reaching the expected outcome | 4 / 6 | 6 / 6 |
+| Transient faults recovered | 0 / 2 | 2 / 2 |
+| Tool-sequence accuracy | 94.4% | 100.0% |
+| Invalid outputs accepted | 0 / 8 | 0 / 11 |
+| Unnecessary logical calls | 0 | 0 |
 
-## Measured result
+The difference comes from `timeout-recovery` and `rate-limit-recovery`. After an injected first-attempt failure, resilient mode retries once and completes each case. A 6/6 result only covers these six synthetic scenarios. Metrics are recomputed from traces; see the [metric definitions](docs/benchmark-results.md) and [committed baseline](benchmarks/baseline-report.json).
 
-The committed benchmark runs the same six frozen scenarios through both modes.
-It uses a deterministic scripted policy and synthetic local tools—no API key,
-network request, GPU, or paid service.
+## Run locally
 
-| Exact metric | Fragile | Resilient | Change |
-| --- | ---: | ---: | ---: |
-| Task correctness | 4 / 6 (66.7%) | 6 / 6 (100.0%) | **+33.3 pp** |
-| Transient-fault recovery | 0 / 2 (0.0%) | 2 / 2 (100.0%) | **+100.0 pp** |
-| Tool-sequence accuracy | 94.4% | 100.0% | **+5.6 pp** |
-| Invalid outputs accepted | 0 | 0 | unchanged |
-| Unnecessary logical calls | 0 | 0 | unchanged |
+Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 22.20+. The single-line commands below work in PowerShell and Bash.
 
-The contrast comes from a first-attempt timeout and rate limit. Resilient mode
-records the failure, retries within policy, and reaches the declared outcome;
-fragile mode stops after one attempt. Inspect the
-[machine-readable baseline](benchmarks/baseline-report.json),
-[benchmark results](docs/benchmark-results.md), and
-[gate/provenance contract](docs/data-and-scenario-provenance.md) for the exact
-denominators, grader definitions, reconstruction rules, and limitations.
-
-## What I ended up building
-
-The implementation ended up in four pieces:
-
-- Explicit run states, checkpoints, optimistic version checks, and execution
-  leases let a run continue after reconstruction. A state transition and its
-  outward-facing event share one SQLite transaction.
-- Registered tools use strict Pydantic input and output schemas, timeouts,
-  bounded retries, idempotency keys, and deterministic fault injection. Each
-  run also reserves policy-call slots before invocation (64 by default,
-  configurable from 1 to 1024).
-- An approval has to echo the current action step and SHA-256 fingerprint.
-  Matching duplicates converge; stale or conflicting decisions are rejected.
-- Graders rebuild metrics from per-case traces and compare them with the
-  committed baseline. FastAPI, the Typer CLI, and the React dashboard expose
-  the same underlying runs and reports.
-
-## Architecture
-
-<p align="center">
-  <img src="docs/architecture/agent-reliability-lab-architecture.png" alt="Agent Reliability Lab system architecture" width="100%">
-</p>
-
-The browser/API path and CLI/evaluation path share the same deterministic runtime
-contracts. SQLite is the single-node coordination and evidence boundary; the
-versioned JSON baseline is a separate regression contract.
-
-Open the [interactive architecture](docs/architecture/agent-reliability-lab-architecture.html)
-for guided views, search, relationship tracing, light/dark themes, and export.
-
-## Run it locally
-
-Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 22.20+.
-
-```bash
+```text
 git clone https://github.com/SCUliujiacheng/agent-reliability-lab.git
 cd agent-reliability-lab
-
 uv sync --dev --locked
 npm ci --prefix web
+```
 
-# Terminal 1: API
-uv run uvicorn agent_reliability_lab.api.app:create_app \
-  --factory \
-  --host 127.0.0.1 \
-  --port 8000
+Start the API in one terminal:
 
-# Terminal 2: dashboard (proxies /v1 to the API)
+```text
+uv run uvicorn agent_reliability_lab.api.app:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+Start the dashboard in another:
+
+```text
 npm --prefix web run dev
 ```
 
-Open `http://127.0.0.1:5173`, run an evaluation, then replay a scenario from the
-dashboard.
+Open `http://127.0.0.1:5173`. Run an evaluation, then select `timeout-recovery` to inspect the events between its first failed attempt and its successful retry. Alternatively, `docker compose up --build` starts the full stack. Configuration, API examples, and development checks are in [local development](docs/local-development.md).
 
-### Docker Compose
+## Reproduce and inspect
 
-```bash
-docker compose up --build
-```
-
-The Compose stack runs both containers as non-root users, serves the dashboard
-and `/v1` through one origin, and keeps the SQLite database in a named volume.
-
-The complete process-environment reference is in [`.env.example`](.env.example).
-The application does not load that file automatically, and Compose declares its
-own values explicitly. `ARL_TRUSTED_HOSTS` replaces the API allowlist; changing
-the dashboard hostname also requires a matching `server_name` in
-`web/nginx.conf`.
-
-## Reproduce the benchmark
-
-```bash
-uv run arl eval scenarios/incident-response \
-  --output artifacts/current-report.json
-
+```text
+uv run arl eval scenarios/incident-response --output artifacts/current-report.json
 uv run arl compare artifacts/current-report.json
-
-uv run arl gate artifacts/current-report.json \
-  --baseline benchmarks/baseline-report.json
+uv run arl gate artifacts/current-report.json --baseline benchmarks/baseline-report.json
 ```
 
-Expected gate output:
+Run this from a clean Git checkout; the last command should print `PASS`. The gate recomputes metrics and checks scenario identity, event order, and hashes. Corrupt reports or incomplete provenance produce an error. See [scenario and report provenance](docs/data-and-scenario-provenance.md) for the rules.
+
+To run the timeout case separately:
 
 ```text
-PASS
+uv run arl run scenarios/incident-response/timeout-recovery.yaml --mode resilient --database .arl-data/demo.db --json
 ```
 
-The gate first validates report structure, suite identity, trace uniqueness,
-ordered event semantics, deterministic outputs, and recomputed summaries. If
-the suite hash, trace ordering, or recomputed summary does not match, it exits
-with an infrastructure failure.
-
-## Inspect one failure-and-recovery trace
-
-```bash
-uv run arl run scenarios/incident-response/timeout-recovery.yaml \
-  --mode resilient \
-  --database .arl-data/demo.db \
-  --json
-```
-
-The trace shows this evidence chain:
+Copy the returned `run_id` to export its trace:
 
 ```text
-search_recent_logs attempt 1
-  -> timeout injected
-  -> transient failure
-search_recent_logs attempt 2
-  -> validated success
-  -> durable checkpoint
-run succeeded: diagnosed
+uv run arl export-trace <run-id> --database .arl-data/demo.db --output artifacts/trace.json
 ```
 
-![Recovered timeout trace](docs/screenshots/trace-detail.png)
+## Implementation choices
 
-Export a run after copying its `run_id` from the command output:
+- **Fix the policy first.** A scripted policy gives both modes the same actions and injected faults. An optional OpenAI-compatible adapter is available separately; model quality is outside the fixed benchmark.
+- **Save state and events together.** SQLite transactions hold checkpoints, version checks, and approval records. Services can be rebuilt around the database and resume pending work. Execution leases and idempotency keys coordinate duplicate requests.
+- **Bind approval to an action.** Clients return the current action step and fingerprint. Identical decisions can be replayed; stale or conflicting decisions return HTTP 409. The `actor` field is a caller-supplied label, not an authenticated identity.
+- **Bound policy calls.** A run reserves each call durably before invocation, with a default limit of 64. Tool retries do not consume another slot. This bounds call count, not total run duration.
 
-```bash
-uv run arl export-trace <run-id> \
-  --database .arl-data/demo.db \
-  --output artifacts/trace.json
-```
+The [implementation notes](docs/technical-tour.md) cover approval races, reconstruction, and grading. The [architecture diagram](docs/architecture/agent-reliability-lab-architecture.html) shows the API, CLI, runtime, and storage paths.
 
-## HTTP workflow
+## Limits
 
-```bash
-# Discover the catalog
-curl http://127.0.0.1:8000/v1/scenarios
+Execution is local and single-node, with SQLite and simulated side effects. The six fixed scenarios do not cover real incident diversity or measure LLM reasoning quality.
 
-# Start a durable approval scenario and keep its review descriptor
-RUN_JSON="$(curl -sS -X POST http://127.0.0.1:8000/v1/runs \
-  -H "content-type: application/json" \
-  -d '{"scenario_id":"approval-reconstruction","mode":"resilient"}')"
-RUN_ID="$(
-  printf '%s' "$RUN_JSON" |
-    python -c 'import json,sys; print(json.load(sys.stdin)["id"])'
-)"
+Authentication, authorization, tenant isolation, and database migrations are not implemented. Multiple workers would add lease and contention problems; a real model would require versioned prompts and repeated runs to measure variation. Those need separate experiments.
 
-read -r ACTION_STEP ACTION_FINGERPRINT < <(
-  printf '%s' "$RUN_JSON" |
-    python -c '
-import json, sys
-approval = json.load(sys.stdin)["pending_approval"]
-print(approval["action_step"], approval["action_fingerprint"])
-'
-)
-
-# Approve using the returned run ID and its current pending_approval descriptor
-curl -X POST "http://127.0.0.1:8000/v1/runs/$RUN_ID/approvals" \
-  -H "content-type: application/json" \
-  -d "{
-    \"actor\": \"demo-operator\",
-    \"allow\": true,
-    \"action_step\": $ACTION_STEP,
-    \"action_fingerprint\": \"$ACTION_FINGERPRINT\",
-    \"reason\": \"trace verified\"
-  }"
-
-curl "http://127.0.0.1:8000/v1/runs/$RUN_ID/trace?limit=100"
-
-# Run and list the same frozen evaluation used by the dashboard
-curl -X POST http://127.0.0.1:8000/v1/evaluations \
-  -H "content-type: application/json" \
-  -d '{"suite":"incident-response"}'
-
-curl "http://127.0.0.1:8000/v1/evaluations?limit=10"
-```
-
-Copy `action_step` and `action_fingerprint` from the run's current
-`pending_approval` descriptor without recomputing them. The server accepts the
-decision only while that exact action is pending. An exact duplicate converges
-idempotently; stale, forged, or conflicting decisions return HTTP 409. Pending
-arguments are recursively sanitized before review. `actor` is a caller-supplied
-label, not an authenticated identity.
-
-Evaluation creation completes synchronously with HTTP 201, persists the report
-in SQLite, and is limited to one concurrent request per API process (the
-default local deployment runs one process). Competing requests receive HTTP 409
-with `evaluation_in_progress`. The dashboard button calls this same public API
-and replaces the displayed report with the returned result.
-
-Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
-
-## Optional OpenAI-compatible policy boundary
-
-The exact benchmark intentionally does not call a model. A separate adapter can
-request one strict `AgentAction` from an OpenAI-compatible
-`/chat/completions` endpoint. Remote URLs must use HTTPS; plaintext HTTP is
-accepted only for `localhost` or loopback-IP development. Redirects are
-disabled. The default connect and read limits are 5 and 30 seconds, with a
-45-second overall HTTP request/read deadline. Responses are bounded while
-streaming to 1 MiB by default (validated maximum: 16 MiB). The adapter requests
-identity encoding and rejects encoded responses before reading their bodies, so
-decompression cannot occur ahead of the byte ceiling. The API key is loaded
-from the caller-selected environment variable, included in trace redaction, and
-rejected if a provider reflects it inside a returned action.
-
-```python
-from agent_reliability_lab.providers.openai_compatible import (
-    OpenAICompatibleConfig,
-    OpenAICompatiblePolicy,
-)
-
-policy = OpenAICompatiblePolicy(
-    OpenAICompatibleConfig(
-        base_url="https://provider.example/v1",
-        model="your-model",
-        api_key_env="PROVIDER_API_KEY",
-        total_timeout_seconds=45.0,
-        max_response_bytes=1_048_576,
-    )
-)
-```
-
-This adapter is a tested library boundary, not the default CLI policy. Provider
-quality needs a separate repeated, statistical evaluation; it is not presented
-as part of the deterministic core result. The adapter does not provide an
-outbound destination allowlist or network sandbox; production deployments must
-restrict egress independently.
-
-## Local checks
-
-```bash
-uv sync --dev --locked
-uv run pytest -v
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src
-
-npm ci --prefix web
-npm --prefix web test -- --run
-npm --prefix web run lint
-npm --prefix web run typecheck
-npm --prefix web run build
-
-uv run arl eval scenarios/incident-response \
-  --output artifacts/final-report.json
-uv run arl gate artifacts/final-report.json \
-  --baseline benchmarks/baseline-report.json
-```
-
-GitHub Actions runs independent Python, frontend, benchmark, and container jobs.
-The container job builds both images and exercises the Compose stack; the
-benchmark job enforces the committed evidence contract.
-
-## Repository map
-
-```text
-src/agent_reliability_lab/
-  api/          FastAPI adapter and narrow response contracts
-  domain/       immutable actions, runs, and scenario models
-  evaluation/   exact graders, report provenance, and fail-closed gate
-  providers/    strict OpenAI-compatible policy adapter
-  runtime/      checkpointed orchestration and approval-aware services
-  storage/      SQLite transactions, CAS, leases, and durable evidence
-  telemetry/    ordered events and recursive redaction
-  tools/        registry, validation, retries, faults, and idempotency
-web/            React + TypeScript evidence dashboard
-scenarios/      frozen synthetic YAML suite
-benchmarks/     committed baseline report
-docs/           architecture, benchmark semantics, provenance, and technical tour
-```
-
-## What this project does not prove
-
-- The fixed suite has six synthetic incident scenarios; it does not model
-  real-world incident diversity.
-- The default policy is scripted, so the benchmark measures orchestration and
-  tool-boundary reliability—not LLM reasoning quality.
-- SQLite and in-process execution target a local, single-node demonstration;
-  there are no database migrations or distributed workers.
-- The demo has no authentication, RBAC, tenant isolation, or secrets manager.
-- The generic `Policy` protocol does not impose a universal per-call deadline;
-  custom policies must bound their own I/O. The optional HTTP provider does have
-  a 45-second total deadline, and the action budget bounds call count, not call
-  duration.
-- Tool side effects are simulated. This is not a production incident executor.
-
-I have not added PostgreSQL migrations, authenticated approvals, distributed
-workers, OpenTelemetry export, or repeated evaluation against a real provider.
-Those need a different experiment; the six local scenarios do not support
-claims about them.
-
-## Follow one run end to end
-
-Run `timeout-recovery`, inspect its trace, then compare the report with the
-committed baseline. The [technical design tour](docs/technical-tour.md) covers
-grading, approval races, idempotency boundaries, corrupted-evidence checks,
-and possible storage and worker extensions. Scenario origins and integrity
-fields are recorded in [data and scenario provenance](docs/data-and-scenario-provenance.md).
-
-## License
-
-[MIT](LICENSE)
+Code is released under the [MIT License](LICENSE). Scenario origins are documented in [data and scenario provenance](docs/data-and-scenario-provenance.md).

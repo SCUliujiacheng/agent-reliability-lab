@@ -29,10 +29,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.failed) {
       return (
         <main className="fatal-state" role="alert">
-          <p className="eyebrow">Unexpected interface error</p>
-          <h1>Dashboard interrupted</h1>
-          <p>The current view could not be rendered. Reload the dashboard to try again.</p>
-          <button type="button" className="primary-button" onClick={this.reset}>Reload dashboard</button>
+          <h1>This view could not be loaded</h1>
+          <p>Reload the page to try again.</p>
+          <button type="button" className="primary-button" onClick={this.reset}>Reload</button>
         </main>
       );
     }
