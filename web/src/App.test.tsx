@@ -48,6 +48,66 @@ function overviewFetch(
 }
 
 describe("App workflows", () => {
+  it("resumes a persisted mobile checkpoint instead of creating a different run", async () => {
+    const marker = document.createElement("meta");
+    marker.name = "arl-runtime";
+    marker.content = "mobile";
+    document.head.append(marker);
+    const interrupted = runFixture({ status: "running", result: undefined, attempt_count: 1 });
+    const completed = runFixture({ attempt_count: 3 });
+    const resumed = deferred<Response>();
+    const base = overviewFetch({ runs: [interrupted], evaluation: null });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `/v1/runs/${interrupted.id}`) return response(interrupted);
+      if (url.endsWith("/trace?limit=100&after_sequence=0")) {
+        return response({ events: traceFixture, next_after_sequence: 7, has_more: false });
+      }
+      if (url === `/v1/runs/${interrupted.id}/resume`) return resumed.promise;
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    try {
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: /Open run timeout-recovery/ }));
+      const resume = await screen.findByRole("button", { name: "Resume run" });
+      await user.click(resume);
+      await user.click(resume);
+      expect(resume).toBeDisabled();
+      const mutations = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+      expect(mutations).toHaveLength(1);
+      expect(String(mutations[0][0])).toBe(`/v1/runs/${interrupted.id}/resume`);
+      expect(mutations[0][1]?.body).toBe("{}");
+      await act(async () => { resumed.resolve(response(completed)); await resumed.promise; });
+      expect(await screen.findByText("Succeeded")).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Resume run" })).not.toBeInTheDocument();
+    } finally {
+      marker.remove();
+    }
+  });
+
+  it("keeps scenarios and new evaluation available when old evidence is incompatible", async () => {
+    const base = overviewFetch({ runs: [], evaluation: null });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith("/v1/evaluations?")) {
+        return response({ error: { code: "evidence_invalid", message: "Old suite", details: {} } }, 409);
+      }
+      if (String(input) === "/v1/evaluations" && init?.method === "POST") {
+        return response(evaluationFixture(), 201);
+      }
+      return base(input, init);
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "Start run" })).toBeEnabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Previous evaluation could not be loaded");
+    const evaluate = screen.getByRole("button", { name: "Run evaluation" });
+    expect(evaluate).toBeEnabled();
+    await user.click(evaluate);
+    expect(await screen.findByText("91.7%")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("starts independent overview requests in parallel", async () => {
     const requests = [deferred<Response>(), deferred<Response>(), deferred<Response>()];
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

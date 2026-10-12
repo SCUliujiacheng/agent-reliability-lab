@@ -5,6 +5,10 @@ import { RunDetail } from "./RunDetail";
 import { pendingApprovalFixture, runFixture, traceFixture } from "../test/fixtures";
 
 describe("RunDetail", () => {
+  it("rounds fractional milliseconds without a long floating-point display", () => {
+    render(<RunDetail run={runFixture({ duration_ms: 2.9979999999999998 })} events={[]} state="ready" mutationState="idle" onBack={vi.fn()} onRunAgain={vi.fn()} onApprove={vi.fn()} />);
+    expect(screen.getByText("3ms")).toBeVisible();
+  });
   it("uses a same-origin download link in the packaged Android edition", () => {
     const marker = document.createElement("meta");
     marker.name = "arl-runtime";

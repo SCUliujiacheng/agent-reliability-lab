@@ -492,6 +492,8 @@ class MobileApp:
             "id": str(uuid4()),
             "trace_id": str(uuid4()),
             "scenario_id": scenario_id,
+            "scenario_hash": _digest(self.scenarios[scenario_id]),
+            "engine_version": "mobile/v1",
             "mode": mode,
             "status": "queued",
             "created_at": now,
@@ -520,6 +522,7 @@ class MobileApp:
                 run = self._load(db, run_id)
                 if run["status"] in {"failed", "succeeded", "waiting_approval"}:
                     return run
+                self._assert_scenario_compatible(run)
                 if run["status"] == "queued":
                     run["status"] = "running"
                     self._event(db, run, "run.running", {})
@@ -551,6 +554,19 @@ class MobileApp:
         raise ApiError(
             409, "action_budget_exceeded", "The offline action budget was exhausted."
         )
+
+    def _assert_scenario_compatible(self, run):
+        scenario = self.scenarios.get(run["scenario_id"])
+        if (
+            scenario is None
+            or run.get("scenario_hash") != _digest(scenario)
+            or run.get("engine_version") != "mobile/v1"
+        ):
+            raise ApiError(
+                409,
+                "scenario_changed",
+                "This run requires its original scenario and execution engine. Export its trace and start a new run.",
+            )
 
     def _attempt(self, db, run, scenario, action):
         name, arguments, step = (
@@ -690,6 +706,7 @@ class MobileApp:
         normalized = {**body, "reason": body.get("reason")}
         with self._transaction(db):
             run = self._load(db, run_id)
+            self._assert_scenario_compatible(run)
             previous = db.execute(
                 "SELECT body FROM decisions WHERE run_id=? AND action_step=?",
                 (run_id, body["action_step"]),
@@ -733,7 +750,19 @@ class MobileApp:
         return _digest({"run": run, "events": events})
 
     def _evaluate(self, db):
-        evaluation = {"evaluation_id": str(uuid4()), "generated_at": _now(), "runs": []}
+        evaluation = {
+            "evaluation_id": str(uuid4()),
+            "generated_at": _now(),
+            "runs": [],
+            "provenance": {
+                "report_version": "mobile/v1",
+                "grader_version": "mobile-exact/v1",
+                "suite_hash": self.suite_hash,
+                "git_revision": self.metadata["git_revision"],
+                "git_dirty": self.metadata.get("git_dirty", False),
+                "package_version": self.metadata["version"],
+            },
+        }
         for mode in ("fragile", "resilient"):
             for scenario in sorted(
                 self.scenarios.values(), key=lambda item: item["id"]
@@ -875,6 +904,17 @@ class MobileApp:
         }
 
     def _report(self, db, evaluation):
+        provenance = evaluation["provenance"]
+        if (
+            provenance["suite_hash"] != self.suite_hash
+            or provenance["report_version"] != "mobile/v1"
+            or provenance["grader_version"] != "mobile-exact/v1"
+        ):
+            raise ApiError(
+                409,
+                "evidence_invalid",
+                "This evaluation requires its original scenario suite and grader.",
+            )
         cases = {"fragile": [], "resilient": []}
         for reference in evaluation["runs"]:
             run = self._load(db, reference["id"])
@@ -961,14 +1001,7 @@ class MobileApp:
         return {
             "evaluation_id": evaluation["evaluation_id"],
             "generated_at": evaluation["generated_at"],
-            "provenance": {
-                "report_version": "mobile/v1",
-                "grader_version": "mobile-exact/v1",
-                "suite_hash": self.suite_hash,
-                "git_revision": self.metadata["git_revision"],
-                "git_dirty": self.metadata.get("git_dirty", False),
-                "package_version": self.metadata["version"],
-            },
+            "provenance": provenance,
             "modes": modes,
             "comparison": comparison,
         }

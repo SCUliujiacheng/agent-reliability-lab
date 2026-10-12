@@ -5,9 +5,13 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from agent_reliability_lab.scenarios.loader import load_scenario, scenario_sha256
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from distribution.resource_staging import reset_resources
 
 
 def canonical(value):
@@ -22,7 +26,7 @@ def prepare_resources(project_root: Path, resource_dir: Path) -> None:
     web = project_root / "web" / "dist"
     if not (web / "index.html").is_file():
         raise FileNotFoundError("Build the dashboard first: npm --prefix web run build")
-    resource_dir.mkdir(parents=True, exist_ok=True)
+    resource_dir = reset_resources(project_root, resource_dir)
     data = resource_dir / "data"
     scenario_output = data / "scenarios"
     scenario_output.mkdir(parents=True, exist_ok=True)
@@ -80,6 +84,8 @@ def prepare_resources(project_root: Path, resource_dir: Path) -> None:
         revision = "unavailable"
         dirty = False
     metadata = json.loads((resource_dir / "app.json").read_text(encoding="utf-8"))
+    metadata["build_revision"] = revision
+    (resource_dir / "app.json").write_text(canonical(metadata), encoding="utf-8")
     (resource_dir / "build.json").write_text(
         canonical(
             {
@@ -117,9 +123,9 @@ def main():
     if not host.is_file():
         parser.error("The shared distribution/portable_host.py is required")
     prepare_mobile_resources(root, args.assets_dir)
-    args.python_dir.mkdir(parents=True, exist_ok=True)
+    python_dir = reset_resources(root, args.python_dir)
     for name in ("portable_host.py", "mobile_app.py"):
-        shutil.copyfile(root / "distribution" / name, args.python_dir / name)
+        shutil.copyfile(root / "distribution" / name, python_dir / name)
 
 
 if __name__ == "__main__":

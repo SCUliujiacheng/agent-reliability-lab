@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Exists only in the instrumentation APK, never in the released app. -->
+        <provider android:name="dev.portableapp.shell.TestDocumentProvider"
+            android:authorities="${applicationId}.fixtures" android:exported="true" />
+    </application>
+</manifest>

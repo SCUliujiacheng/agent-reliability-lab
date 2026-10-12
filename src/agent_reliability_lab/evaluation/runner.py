@@ -190,6 +190,7 @@ async def run_evaluation(
     modes: Sequence[EvaluationMode] = ("fragile", "resilient"),
     *,
     case_observer: CaseObserver | None = None,
+    frozen_git_provenance: tuple[str, bool] | None = None,
 ) -> EvaluationReport:
     """Run identical frozen scenarios in requested modes with isolated stores."""
     requested_modes = tuple(modes)
@@ -207,7 +208,11 @@ async def run_evaluation(
     scenarios = [load_scenario(root / entry.relative_path) for entry in manifest]
     for scenario in scenarios:
         _validate_fault_targets(scenario)
-    revision, dirty = _git_provenance(root)
+    revision, dirty = (
+        _git_provenance(root)
+        if frozen_git_provenance is None
+        else frozen_git_provenance
+    )
 
     mode_results: dict[EvaluationMode, ModeResult] = {}
     for mode in requested_modes:

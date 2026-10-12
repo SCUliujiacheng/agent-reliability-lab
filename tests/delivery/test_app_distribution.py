@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -32,10 +33,53 @@ def load_adapter(name):
 
 
 @pytest.fixture
-def resources(tmp_path):
+def resources(tmp_path, bundle_source):
     root = tmp_path / "Read only installation 空间"
-    load_adapter("prepare_android").prepare_resources(ROOT, root)
+    load_adapter("prepare_android").prepare_resources(bundle_source, root)
     return root
+
+
+@pytest.fixture(scope="session")
+def bundle_source(tmp_path_factory):
+    """A source checkout fixture; Python tests must not require npm or web/dist."""
+    source = tmp_path_factory.mktemp("delivery-source")
+    shutil.copytree(ROOT / "scenarios", source / "scenarios")
+    (source / "benchmarks").mkdir()
+    shutil.copyfile(
+        ROOT / "benchmarks/baseline-report.json",
+        source / "benchmarks/baseline-report.json",
+    )
+    shutil.copyfile(ROOT / "LICENSE", source / "LICENSE")
+    (source / "distribution").mkdir()
+    for path in (ROOT / "distribution").glob("*.py"):
+        shutil.copyfile(path, source / "distribution" / path.name)
+    shutil.copyfile(ROOT / "distribution/app.json", source / "distribution/app.json")
+    (source / "web/dist").mkdir(parents=True)
+    (source / "web/dist/index.html").write_text(
+        "<!doctype html><html><head><title>Test dashboard</title></head><body>Test dashboard</body></html>",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(source), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "-c",
+            "user.email=local@example.test",
+            "-c",
+            "user.name=Local test",
+            "commit",
+            "-m",
+            "Isolated source fixture",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return source
 
 
 @pytest.fixture
@@ -326,10 +370,12 @@ def test_mobile_export_is_a_complete_same_origin_json_download(mobile):
     )
 
 
-def test_android_resource_preparation_marks_mobile_without_changing_desktop(tmp_path):
+def test_android_resource_preparation_marks_mobile_without_changing_desktop(
+    tmp_path, bundle_source
+):
     preparation = load_adapter("prepare_android")
-    preparation.prepare_mobile_resources(ROOT, tmp_path / "mobile")
-    preparation.prepare_resources(ROOT, tmp_path / "desktop")
+    preparation.prepare_mobile_resources(bundle_source, tmp_path / "mobile")
+    preparation.prepare_resources(bundle_source, tmp_path / "desktop")
     assert 'name="arl-runtime" content="mobile"' in (
         tmp_path / "mobile/web/index.html"
     ).read_text(encoding="utf-8")
@@ -455,9 +501,11 @@ def test_frozen_smoke_hook_executes_scenarios_approval_and_evaluation(
         listener.close()
 
 
-def test_resource_bundle_contains_only_curated_data_and_source_hashes(tmp_path):
+def test_resource_bundle_contains_only_curated_data_and_source_hashes(
+    tmp_path, bundle_source
+):
     resources = tmp_path / "curated"
-    load_adapter("prepare_android").prepare_resources(ROOT, resources)
+    load_adapter("prepare_android").prepare_resources(bundle_source, resources)
     catalog = json.loads(
         (resources / "data/scenarios.json").read_text(encoding="utf-8")
     )
@@ -469,3 +517,184 @@ def test_resource_bundle_contains_only_curated_data_and_source_hashes(tmp_path):
         json.loads((resources / "app.json").read_text(encoding="utf-8"))["version"]
         == "0.2.0"
     )
+
+
+def test_repeat_resource_build_drops_stale_files_and_mobile_marker(
+    tmp_path, bundle_source
+):
+    preparation = load_adapter("prepare_android")
+    output = tmp_path / "repeat"
+    preparation.prepare_mobile_resources(bundle_source, output)
+    (output / "private.db").write_bytes(b"not a release artifact")
+    (output / "data" / "old-scenario.json").write_text("{}", encoding="utf-8")
+    (output / "web" / "old-script.js").write_text("old", encoding="utf-8")
+    preparation.prepare_resources(bundle_source, output)
+    assert not (output / "private.db").exists()
+    assert not (output / "data" / "old-scenario.json").exists()
+    assert not (output / "web" / "old-script.js").exists()
+    assert 'name="arl-runtime"' not in (output / "web" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    assert len(list((output / "data" / "scenarios").glob("*.yaml"))) == 6
+
+
+def test_resource_build_refuses_unowned_nonempty_directory(tmp_path, bundle_source):
+    output = tmp_path / "user-directory"
+    output.mkdir()
+    private = output / "private.db"
+    private.write_bytes(b"keep this")
+    with pytest.raises(ValueError, match="owned|marker|nonempty"):
+        load_adapter("prepare_android").prepare_resources(bundle_source, output)
+    assert private.read_bytes() == b"keep this"
+    assert list(output.iterdir()) == [private]
+
+
+def test_android_app_metadata_identifies_exact_build_revision(tmp_path, bundle_source):
+    output = tmp_path / "android"
+    load_adapter("prepare_android").prepare_mobile_resources(bundle_source, output)
+    expected = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=bundle_source, text=True
+    ).strip()
+    config = json.loads((output / "app.json").read_text(encoding="utf-8"))
+    assert config.get("build_revision") == expected
+    assert (
+        json.loads((output / "build.json").read_text(encoding="utf-8"))["git_revision"]
+        == expected
+    )
+
+
+def test_android_python_preparation_removes_old_generated_modules(
+    tmp_path, bundle_source
+):
+    script = bundle_source / "distribution" / "prepare_android.py"
+    python_output, assets = tmp_path / "python", tmp_path / "assets"
+    command = [
+        sys.executable,
+        str(script),
+        "--python-dir",
+        str(python_output),
+        "--assets-dir",
+        str(assets),
+    ]
+    subprocess.run(command, check=True)
+    stale = python_output / "private_settings.py"
+    stale.write_text("password = 'never bundle'", encoding="utf-8")
+    subprocess.run(command, check=True)
+    assert not stale.exists()
+    assert sorted(path.name for path in python_output.glob("*.py")) == [
+        "mobile_app.py",
+        "portable_host.py",
+    ]
+
+
+def test_upgrade_does_not_relabel_existing_evaluation_provenance(
+    mobile, resources, tmp_path
+):
+    _, report = request(
+        mobile, "POST", "/v1/evaluations", {"suite": "incident-response"}
+    )
+    metadata = json.loads((resources / "build.json").read_text(encoding="utf-8"))
+    metadata.update(git_revision="1" * 40, git_dirty=False, version="0.3.0")
+    (resources / "build.json").write_text(json.dumps(metadata), encoding="utf-8")
+    upgraded = load_adapter("mobile_app").create_app(
+        str(tmp_path / "User data 空间"), str(resources)
+    )
+    status, original = request(
+        upgraded, "GET", f"/v1/evaluations/{report['evaluation_id']}"
+    )
+    assert status == 200
+    assert original == report
+
+
+def test_changed_scenario_suite_cannot_regrade_old_evaluation(mobile):
+    _, report = request(
+        mobile, "POST", "/v1/evaluations", {"suite": "incident-response"}
+    )
+    mobile.suite_hash = "0" * 64
+    status, result = request(
+        mobile, "GET", f"/v1/evaluations/{report['evaluation_id']}"
+    )
+    assert status == 409
+    assert result["error"]["code"] == "evidence_invalid"
+
+
+@pytest.mark.parametrize("unrelated_git", [False, True])
+def test_desktop_evaluation_uses_bundled_build_provenance(
+    resources, tmp_path, unrelated_git
+):
+    metadata = json.loads((resources / "build.json").read_text(encoding="utf-8"))
+    metadata.update(git_revision="9" * 40, git_dirty=True)
+    (resources / "build.json").write_text(json.dumps(metadata), encoding="utf-8")
+    if unrelated_git:
+        subprocess.run(["git", "init", str(resources)], check=True, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(resources),
+                "-c",
+                "user.email=local@example.test",
+                "-c",
+                "user.name=Local test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "Unrelated",
+            ],
+            check=True,
+            capture_output=True,
+        )
+    adapter = load_adapter("desktop_app")
+    app = adapter.create_app(str(tmp_path / "desktop-provenance"), str(resources))
+    with TestClient(app, base_url="http://localhost") as client:
+        result = client.post("/v1/evaluations", json={"suite": "incident-response"})
+        assert result.status_code == 201
+        report = result.json()
+        assert report["provenance"]["git_revision"] == "9" * 40
+        assert report["provenance"]["git_dirty"] is True
+        assert client.get(f"/v1/evaluations/{report['evaluation_id']}").json() == report
+
+
+def test_resume_rejects_changed_scenario_without_advancing_checkpoint(
+    mobile, resources, tmp_path, monkeypatch
+):
+    original = mobile._attempt
+
+    def interrupt(db, run, scenario, action):
+        if run["current_step"] == 1:
+            raise SystemExit("interrupted")
+        return original(db, run, scenario, action)
+
+    monkeypatch.setattr(mobile, "_attempt", interrupt)
+    with pytest.raises(SystemExit):
+        start(mobile, "normal-success")
+    upgraded = load_adapter("mobile_app").create_app(
+        str(tmp_path / "User data 空间"), str(resources)
+    )
+    _, runs = request(upgraded, "GET", "/v1/runs")
+    run = runs["items"][0]
+    before = trace(upgraded, run["id"])
+    upgraded.scenarios["normal-success"]["actions"][0] = {
+        "type": "call_tool",
+        "tool_name": "prepare_rollback",
+        "arguments": {"deployment_id": "new-deployment"},
+    }
+    status, result = request(upgraded, "POST", f"/v1/runs/{run['id']}/resume")
+    assert status == 409
+    assert result["error"]["code"] == "scenario_changed"
+    assert trace(upgraded, run["id"]) == before
+    assert request(upgraded, "GET", f"/v1/runs/{run['id']}")[1] == run
+
+
+def test_approval_rejects_changed_scenario_without_recording_decision(mobile):
+    run = start(mobile, "approval-reconstruction")
+    before = trace(mobile, run["id"])
+    mobile.scenarios["approval-reconstruction"]["actions"][0]["arguments"] = {
+        "unexpected": "new policy"
+    }
+    status, result = request(
+        mobile, "POST", f"/v1/runs/{run['id']}/approvals", decision(run)
+    )
+    assert status == 409
+    assert result["error"]["code"] == "scenario_changed"
+    assert trace(mobile, run["id"]) == before

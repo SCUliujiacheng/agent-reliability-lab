@@ -14,6 +14,7 @@ const EMPTY_OVERVIEW: OverviewData = { runs: [], evaluation: null, scenarios: []
 export function useOverview() {
   const [state, setState] = useState<LoadState>("loading");
   const [data, setData] = useState<OverviewData>(EMPTY_OVERVIEW);
+  const [evaluationError, setEvaluationError] = useState(false);
   const [generation, setGeneration] = useState(0);
   const activeGeneration = useRef(0);
 
@@ -24,6 +25,7 @@ export function useOverview() {
 
   const replaceEvaluation = useCallback((evaluation: EvaluationReport) => {
     setData((current) => ({ ...current, evaluation }));
+    setEvaluationError(false);
   }, []);
 
   useEffect(() => {
@@ -32,12 +34,13 @@ export function useOverview() {
     activeGeneration.current = requestGeneration;
     void Promise.all([
       getRuns(8, controller.signal),
-      getEvaluations(1, controller.signal),
+      getEvaluations(1, controller.signal).catch(() => null),
       getScenarios(controller.signal),
     ])
       .then(([runs, evaluations, scenarios]) => {
         if (controller.signal.aborted || activeGeneration.current !== requestGeneration) return;
-        setData({ runs, evaluation: evaluations[0] ?? null, scenarios });
+        setData({ runs, evaluation: evaluations?.[0] ?? null, scenarios });
+        setEvaluationError(evaluations === null);
         setState("ready");
       })
       .catch((error: unknown) => {
@@ -51,5 +54,5 @@ export function useOverview() {
     };
   }, [generation]);
 
-  return { data, state, refresh, replaceEvaluation };
+  return { data, state, evaluationError, refresh, replaceEvaluation };
 }

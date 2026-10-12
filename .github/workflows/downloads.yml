@@ -1,0 +1,151 @@
+name: Download builds
+on:
+  push:
+    branches: ['codex/release-downloads*']
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: downloads-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  desktop:
+    name: Desktop ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+          - os: macos-15
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.11.32'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: uv sync --frozen --group build --python 3.12
+      - name: Build web assets
+        shell: bash
+        run: |
+          if [ -d frontend ]; then cd frontend; npm ci; npm test; npm run build; fi
+          if [ -d web ]; then cd web; npm ci; npm test -- --run; npm run build; fi
+      - run: uv run pytest -q
+      - name: Build and execute native binary in isolated Unicode directory
+        run: uv run --group build python distribution/build_desktop.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/releases/*
+          if-no-files-found: error
+  android:
+    name: Android signed APK and emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.11.32'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: uv sync --frozen --python 3.12
+      - run: uv python install 3.13
+      - name: Install pinned Android build tools
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+      - name: Build web and prepare Python path
+        shell: bash
+        run: |
+          if [ -d frontend ]; then (cd frontend && npm ci && npm run build); fi
+          if [ -d web ]; then (cd web && npm ci && npm run build); fi
+          echo "PYTHON=$GITHUB_WORKSPACE/.venv/bin/python" >> "$GITHUB_ENV"
+          echo "CHAQUOPY_BUILD_PYTHON=$(uv python find --managed-python 3.13)" >> "$GITHUB_ENV"
+          chmod +x android/gradlew
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install and test actual WebView/Python application
+        uses: ReactiveCircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: cd android && ./gradlew --no-daemon :app:boundaryPolicyTest :app:connectedDebugAndroidTest
+      - name: Prepare persistent signing key
+        env:
+          SIGNING_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$SIGNING_KEY"
+          umask 077
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/release.p12"
+      - name: Build signed release (not a debug APK)
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.p12
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon -PtestBuildType=release :app:assembleRelease :app:assembleReleaseAndroidTest :app:lintRelease
+      - name: Verify release signature and record artifact
+        shell: bash
+        run: |
+          python3 distribution/verify_android.py
+          uv run python -c "import json,pathlib,shutil; c=json.loads(pathlib.Path('distribution/app.json').read_text()); p=pathlib.Path('dist/releases'); p.mkdir(parents=True,exist_ok=True); shutil.copy2('android/app/build/outputs/apk/release/app-release.apk',p/(c['slug']+'-'+c['version']+'-android.apk'))"
+      - name: Install signed release and test reinstall
+        uses: ReactiveCircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python3 distribution/android_release_smoke.py
+      - name: Delete runner's key copy
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.p12"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-android
+          path: dist/releases/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: android-test-reports
+          path: android/app/build/reports
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          path: dist/releases
+          merge-multiple: true
+      - run: python3 distribution/release_assets.py
+      - name: Publish all verified downloads together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --title "$GITHUB_REF_NAME — downloads preview" --notes-file docs/downloads.md dist/releases/*.zip dist/releases/*.apk dist/releases/SHA256SUMS.txt dist/releases/build-manifest.json

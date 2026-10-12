@@ -1,0 +1,121 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+def repoRoot = rootProject.projectDir.parentFile
+def metadataFile = new File(repoRoot, 'distribution/app.json')
+def metadata = new JsonSlurper().parse(metadataFile)
+['slug', 'name', 'version', 'android_application_id', 'android_version_code', 'export_paths'].each {
+    if (metadata[it] == null) throw new GradleException("distribution/app.json is missing ${it}")
+}
+if (!(metadata.android_application_id ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+/)) {
+    throw new GradleException('Invalid Android application ID')
+}
+if (!(metadata.export_paths instanceof List)) throw new GradleException('export_paths must be an array')
+
+def signingNames = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
+def hasSigning = signingNames.every { System.getenv(it) }
+def instrumentedBuildType = providers.gradleProperty('testBuildType').getOrElse('debug')
+if (!(instrumentedBuildType in ['debug', 'release'])) throw new GradleException('testBuildType must be debug or release')
+
+android {
+    namespace 'dev.portableapp.shell'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+    testBuildType instrumentedBuildType
+    defaultConfig {
+        applicationId metadata.android_application_id
+        minSdk 24
+        targetSdk 36
+        versionCode metadata.android_version_code as Integer
+        versionName metadata.version
+        resValue 'string', 'app_name', metadata.name
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        if (hasSigning) {
+            release {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            debuggable false
+            minifyEnabled false
+            if (hasSigning) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/assets')
+    packaging { jniLibs { useLegacyPackaging false } }
+    lint { abortOnError true }
+}
+
+chaquopy {
+    defaultConfig {
+        version '3.13'
+        if (System.getenv('CHAQUOPY_BUILD_PYTHON')) buildPython System.getenv('CHAQUOPY_BUILD_PYTHON')
+    }
+    sourceSets.main.srcDir layout.buildDirectory.dir('generated/python')
+}
+
+def prepareAndroid = tasks.register('prepareAndroid', Exec) {
+    group = 'build'
+    description = 'Prepare the explicitly selected Python core and bundled web assets.'
+    workingDir repoRoot
+    commandLine System.getenv('PYTHON') ?: (System.getProperty('os.name').toLowerCase().contains('windows') ? 'python' : 'python3'),
+            new File(repoRoot, 'distribution/prepare_android.py').absolutePath
+    // Always invoke the project generator: it owns its source whitelist and validates the bundle.
+    outputs.upToDateWhen { false }
+    doLast {
+        ['generated/python/portable_host.py', 'generated/python/mobile_app.py',
+         'generated/assets/application/app.json', 'generated/assets/application/web/index.html'].each {
+            if (!layout.buildDirectory.file(it).get().asFile.isFile()) {
+                throw new GradleException("prepare_android.py did not produce ${it}")
+            }
+        }
+    }
+}
+tasks.configureEach {
+    if (name == 'preBuild' || name.matches(/.*(Python|Assets).*/) && name != 'prepareAndroid') {
+        dependsOn prepareAndroid
+    }
+    if (name in ['packageRelease', 'bundleRelease', 'assembleRelease', 'packageReleaseAndroidTest', 'assembleReleaseAndroidTest']) {
+        doFirst {
+            if (!hasSigning) throw new GradleException('Release signing requires all ANDROID_KEYSTORE_* and ANDROID_KEY_* variables. No debug signing fallback is permitted.')
+            if (!file(System.getenv('ANDROID_KEYSTORE_PATH')).isFile()) throw new GradleException('Release keystore does not exist')
+        }
+    }
+}
+
+dependencies {
+    androidTestImplementation 'androidx.test:core:1.7.0'
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-intents:3.7.0'
+}
+
+tasks.register('boundaryPolicyTest', JavaExec) {
+    dependsOn 'compileDebugUnitTestJavaWithJavac'
+    classpath files(layout.buildDirectory.dir('intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes'),
+            layout.buildDirectory.dir('intermediates/javac/debug/compileDebugJavaWithJavac/classes'))
+    mainClass = 'dev.portableapp.shell.BoundaryPolicyTest'
+}
+tasks.named('check').configure { dependsOn 'boundaryPolicyTest' }

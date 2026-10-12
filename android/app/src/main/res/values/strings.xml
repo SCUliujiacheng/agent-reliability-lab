@@ -1,0 +1,17 @@
+<resources>
+    <string name="starting">Starting the offline app…</string>
+    <string name="start_failed">The offline service could not start. Your saved data has not been removed.</string>
+    <string name="retry">Retry</string>
+    <string name="file_cancelled">File selection cancelled.</string>
+    <string name="file_read_failed">Could not read the selected file. Choose a local JSON or CSV file.</string>
+    <string name="file_too_large">Import files must be 16 MiB or smaller.</string>
+    <string name="export_failed">Could not save the file. Check the chosen location and available space.</string>
+    <string name="export_cancelled">Export cancelled.</string>
+    <string name="export_saved">File saved.</string>
+    <string name="export_preparing">Preparing export…</string>
+    <string name="file_reading">Reading selected file…</string>
+    <string name="operation_busy">Finish the current file operation first.</string>
+    <string name="navigation_blocked">This offline app does not open external pages.</string>
+    <string name="page_failed">The local page could not load. Retry to reconnect.</string>
+    <string name="webview_failed">The system WebView stopped. Restart the page to continue.</string>
+</resources>

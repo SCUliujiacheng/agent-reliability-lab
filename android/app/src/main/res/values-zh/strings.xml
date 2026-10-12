@@ -1,0 +1,17 @@
+<resources>
+    <string name="starting">正在启动离线应用…</string>
+    <string name="start_failed">离线服务启动失败。已保存的数据没有被删除。</string>
+    <string name="retry">重试</string>
+    <string name="file_cancelled">已取消文件选择。</string>
+    <string name="file_read_failed">无法读取所选文件，请选择本机 JSON 或 CSV 文件。</string>
+    <string name="file_too_large">导入文件不能超过 16 MiB。</string>
+    <string name="export_failed">文件保存失败，请检查所选位置和剩余空间。</string>
+    <string name="export_cancelled">已取消导出。</string>
+    <string name="export_saved">文件已保存。</string>
+    <string name="export_preparing">正在准备导出…</string>
+    <string name="file_reading">正在读取所选文件…</string>
+    <string name="operation_busy">请先完成当前文件操作。</string>
+    <string name="navigation_blocked">离线应用不能打开外部网页。</string>
+    <string name="page_failed">本机页面加载失败，请重试连接。</string>
+    <string name="webview_failed">系统 WebView 已停止，请重新打开页面。</string>
+</resources>

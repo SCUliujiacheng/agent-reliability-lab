@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-import { ApiClientError, approveRun, createEvaluation, createRun } from "./api";
+import { ApiClientError, approveRun, createEvaluation, createRun, resumeRun } from "./api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MutationNotice } from "./components/MutationNotice";
 import { Navigation } from "./components/Navigation";
@@ -21,6 +21,7 @@ function Dashboard() {
   const selectionGeneration = useRef(0);
   const approvalsInFlight = useRef(new Set<string>());
   const evaluationInFlight = useRef(false);
+  const resumesInFlight = useRef(new Set<string>());
   const dismissNotice = useCallback(() => setNotice(""), []);
   const selectRun = useCallback((runId: string | null) => {
     selectedRunIdRef.current = runId;
@@ -39,6 +40,36 @@ function Dashboard() {
     } catch {
       setMutationState("error");
       setNotice("The run could not be started. Retry when the API is available.");
+    }
+  };
+
+  const resumeSelectedRun = async () => {
+    if (selectedRunId === null || resumesInFlight.current.has(selectedRunId)) return;
+    const runId = selectedRunId;
+    const generation = selectionGeneration.current;
+    const isCurrent = () => selectedRunIdRef.current === runId
+      && selectionGeneration.current === generation;
+    resumesInFlight.current.add(runId);
+    setMutationState("pending");
+    setNotice("");
+    try {
+      const run = await resumeRun(runId);
+      if (!isCurrent()) return;
+      detail.replaceRun(run, runId);
+      await detail.reloadTrace(runId);
+      if (!isCurrent()) return;
+      setMutationState("success");
+      setNotice("Continued the original run from its saved checkpoint.");
+    } catch (error) {
+      if (!isCurrent()) return;
+      setMutationState("error");
+      if (error instanceof ApiClientError && error.code === "scenario_changed") {
+        setNotice("The scenario has changed. Export this trace and start a new run instead.");
+      } else {
+        setNotice("The run could not be resumed. Retry when the API is available.");
+      }
+    } finally {
+      resumesInFlight.current.delete(runId);
     }
   };
 
@@ -135,6 +166,7 @@ function Dashboard() {
               overview.refresh();
             }}
             onRunAgain={() => void startRun(detail.run!.scenario_id, detail.run!.mode)}
+            onResume={() => void resumeSelectedRun()}
             onApprove={(approval, allow) => void approve(approval, allow)}
           />
         ) : selectedRunId !== null && detail.state === "error" ? (
@@ -151,6 +183,7 @@ function Dashboard() {
               state={overview.state}
               runs={overview.data.runs}
               evaluation={overview.data.evaluation}
+              evaluationError={overview.evaluationError}
               scenarios={overview.data.scenarios}
               launching={mutationState === "pending"}
               evaluating={evaluationPending}

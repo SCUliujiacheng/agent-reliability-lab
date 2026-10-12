@@ -277,10 +277,12 @@ class EvaluationService:
         store: SQLiteRunStore,
         catalog: ScenarioCatalog,
         semaphore: BoundedSemaphore,
+        frozen_git_provenance: tuple[str, bool] | None = None,
     ) -> None:
         self._store = store
         self._catalog = catalog
         self._semaphore = semaphore
+        self._frozen_git_provenance = frozen_git_provenance
 
     def create(self, suite_name: str) -> EvaluationResponse:
         suite = self._catalog.suite(suite_name)
@@ -291,7 +293,15 @@ class EvaluationService:
                 "Another evaluation is already running.",
             )
         try:
-            report = asyncio.run(run_evaluation(suite, modes=("fragile", "resilient")))
+            report = asyncio.run(
+                run_evaluation(suite, modes=("fragile", "resilient"))
+                if self._frozen_git_provenance is None
+                else run_evaluation(
+                    suite,
+                    modes=("fragile", "resilient"),
+                    frozen_git_provenance=self._frozen_git_provenance,
+                )
+            )
             self._store.save_evaluation_report(report, suite_name=suite_name)
             return _evaluation_response(report)
         finally:
@@ -351,7 +361,10 @@ class ApiContainer:
             settings.max_action_steps,
         )
         self.evaluations = EvaluationService(
-            self.store, self.catalog, BoundedSemaphore(1)
+            self.store,
+            self.catalog,
+            BoundedSemaphore(1),
+            settings.frozen_git_provenance,
         )
         self.health = HealthService(self.store)
 

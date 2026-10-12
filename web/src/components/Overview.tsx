@@ -7,6 +7,7 @@ interface OverviewProps {
   state: LoadState;
   runs: RunSummary[];
   evaluation: EvaluationReport | null;
+  evaluationError?: boolean;
   scenarios: ScenarioSummary[];
   launching: boolean;
   evaluating: boolean;
@@ -20,6 +21,7 @@ export function Overview({
   state,
   runs,
   evaluation,
+  evaluationError = false,
   scenarios,
   launching,
   evaluating,
@@ -79,6 +81,9 @@ export function Overview({
         </div>
       )}
 
+      {evaluationError && state === "ready" ? (
+        <p role="alert">Previous evaluation could not be loaded. Runs and scenarios remain available; you can generate a new evaluation.</p>
+      ) : null}
       {evaluation && state !== "error" ? (
         <EvaluationComparison report={evaluation} action={evaluationAction} />
       ) : (

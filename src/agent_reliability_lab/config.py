@@ -26,6 +26,7 @@ class Settings:
     max_request_body_bytes: int = _DEFAULT_BODY_LIMIT
     max_action_steps: int = DEFAULT_MAX_ACTION_STEPS
     secret_values: frozenset[str] = frozenset()
+    frozen_git_provenance: tuple[str, bool] | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_request_body_bytes <= 1024 * 1024:

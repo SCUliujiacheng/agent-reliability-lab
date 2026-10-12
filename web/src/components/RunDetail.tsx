@@ -12,13 +12,14 @@ interface RunDetailProps {
   mutationState: MutationState;
   onBack: () => void;
   onRunAgain: () => void;
+  onResume?: () => void;
   onApprove: (approval: PendingApproval, allow: boolean) => void;
 }
 
 function formatDuration(value: number): string {
   if (value >= 60_000) return `${(value / 60_000).toFixed(1)}m`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}s`;
-  return `${value}ms`;
+  return `${Number(value.toFixed(1))}ms`;
 }
 
 function exportTrace(run: RunSummary, events: TraceEvent[]) {
@@ -38,6 +39,7 @@ export function RunDetail({
   mutationState,
   onBack,
   onRunAgain,
+  onResume,
   onApprove,
 }: RunDetailProps) {
   const outcome = run.result?.outcome ?? (run.status === "waiting_approval" ? "Pending review" : "Not available");
@@ -53,6 +55,9 @@ export function RunDetail({
           Back to runs
         </button>
         <div className="detail-actions">
+          {mobileEdition && onResume && (run.status === "running" || run.status === "queued") ? (
+            <button type="button" className="primary-button" onClick={onResume} disabled={pending}>Resume run</button>
+          ) : null}
           {mobileEdition
             ? <a className="secondary-button" href={`/v1/export?run_id=${encodeURIComponent(run.id)}`}>Export trace</a>
             : <button type="button" className="secondary-button" onClick={() => exportTrace(run, events)}>Export trace</button>}
