@@ -12,8 +12,9 @@ extracted from the APK separately. No external Python installation is required.
 
 `../distribution/app.json` must contain `slug`, `name`, `version`,
 `android_application_id`, `android_version_code`, and `export_paths`.
-An export path is an exact absolute path (query strings are allowed), or an
+An export path in configuration is an exact absolute path without a query, or an
 absolute path ending in `/` which permits exactly one following filename.
+Runtime download URLs may carry query strings, such as a selected run ID.
 Downloads must return JSON or CSV, remain on this launch's exact origin and never
 redirect. Export streams are bounded to 128 MiB. Import files are copied from a
 user-selected content URI with an actual **16 MiB byte limit**, even if the

@@ -31,7 +31,7 @@ Desktop records are stored separately from the extracted app:
 - macOS: `~/Library/Application Support/agent-reliability-lab`.
 - An explicit `--data-dir` can choose another directory.
 
-Android uses its private app storage and excludes these records from automatic backup. App updates preserve that directory; uninstalling or clearing app storage removes it. Export traces before removing the app if you need to keep them. Copying or deleting an extracted desktop bundle does not move or remove its user data.
+Android uses its private app storage and excludes these records from automatic backup and device-to-device migration. App updates preserve that directory; uninstalling or clearing app storage removes it. Manually export important traces before removing the app or changing devices. Copying or deleting an extracted desktop bundle does not move or remove its user data.
 
 The English and Chinese editions have separate application IDs and data directories. Their UI language differs; the six scenario definitions and portable execution code are the same.
 
