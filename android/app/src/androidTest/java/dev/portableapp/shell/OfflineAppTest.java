@@ -7,12 +7,19 @@ import static androidx.test.espresso.intent.matcher.IntentMatchers.hasAction;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
+import static androidx.test.espresso.matcher.RootMatchers.withDecorView;
+import static org.hamcrest.CoreMatchers.is;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.Instrumentation;
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
+import android.os.PowerManager;
+import android.view.View;
 import android.webkit.WebView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -78,6 +85,81 @@ public final class OfflineAppTest {
         });
         assertTrue("WebView did not commit the picker control", painted.await(15, TimeUnit.SECONDS));
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    }
+
+    private static String shellOutput(String command) throws Exception {
+        try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(
+                InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command))) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            BoundaryPolicy.copyBounded(input, output, 1024 * 1024);
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+
+    private static String focusDiagnostics(String state) {
+        StringBuilder result = new StringBuilder(state);
+        try {
+            // Only window/power metadata, never page contents or session cookies.
+            String output = shellOutput("dumpsys window windows") + shellOutput("dumpsys power");
+            for (String line : output.split("\\r?\\n")) {
+                if (line.contains("mCurrentFocus") || line.contains("mFocusedApp")
+                        || line.contains("mWakefulness=") || line.contains("mInteractive=")) {
+                    result.append('\n').append(line.trim());
+                }
+            }
+        } catch (Exception failure) {
+            result.append("; window diagnostics unavailable: ").append(failure.getClass().getSimpleName());
+        }
+        return result.toString();
+    }
+
+    private static void touchWebView(ActivityScenario<MainActivity> scenario) throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        PowerManager power = context.getSystemService(PowerManager.class);
+        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+        // Test-device setup only. Never change the production Activity's screen flags.
+        if (!power.isInteractive()) shellOutput("input keyevent KEYCODE_WAKEUP");
+        if (keyguard.isKeyguardLocked()) shellOutput("wm dismiss-keyguard");
+        AtomicReference<View> decor = new AtomicReference<>();
+        scenario.onActivity(activity -> {
+            decor.set(activity.getWindow().getDecorView());
+            for (ActivityManager.AppTask task : activity.getSystemService(ActivityManager.class).getAppTasks()) {
+                if (task.getTaskInfo().id == activity.getTaskId()) {
+                    task.moveToFront();
+                    break;
+                }
+            }
+        });
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        AtomicReference<String> lastState = new AtomicReference<>("Activity window not observed");
+        while (System.nanoTime() < until) {
+            AtomicReference<Boolean> ready = new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View view = activity.findViewById(MainActivity.WEB_VIEW_ID);
+                boolean focused = root.hasWindowFocus();
+                boolean layout = root.isLayoutRequested();
+                boolean shown = view.isShown() && view.getWidth() > 0 && view.getHeight() > 0;
+                lastState.set("interactive=" + power.isInteractive() + "; keyguardLocked="
+                        + keyguard.isKeyguardLocked() + "; windowFocus=" + focused
+                        + "; layoutRequested=" + layout + "; webViewShown=" + shown);
+                ready.set(power.isInteractive() && !keyguard.isKeyguardLocked() && focused && !layout && shown);
+                decor.set(root);
+            });
+            if (ready.get()) {
+                awaitPaint(scenario);
+                // Pin the scenario's current window, not a leftover Activity root.
+                try {
+                    onView(withId(MainActivity.WEB_VIEW_ID)).inRoot(withDecorView(is(decor.get()))).perform(click());
+                } catch (RuntimeException | AssertionError failure) {
+                    throw new AssertionError("Real WebView touch failed after readiness: "
+                            + focusDiagnostics(lastState.get()), failure);
+                }
+                return;
+            }
+            Thread.sleep(100);
+        }
+        fail("The test Activity never became touch-ready: " + focusDiagnostics(lastState.get()));
     }
 
     private static void awaitPicker(String action) throws Exception {
@@ -185,8 +267,7 @@ public final class OfflineAppTest {
             awaitPage(scenario);
             intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null));
             evaluate(scenario, "var i=document.createElement('input');i.type='file';i.accept='.json,application/json';i.style='position:fixed;inset:0;width:100%;height:100%;z-index:99999';document.body.appendChild(i);true");
-            awaitPaint(scenario);
-            onView(withId(MainActivity.WEB_VIEW_ID)).perform(click());
+            touchWebView(scenario);
             awaitPicker(Intent.ACTION_OPEN_DOCUMENT);
             assertEquals("true", evaluate(scenario, "document.readyState === 'complete'"));
         } finally { Intents.release(); }
@@ -200,8 +281,7 @@ public final class OfflineAppTest {
             awaitPage(scenario);
             intending(hasAction(Intent.ACTION_CREATE_DOCUMENT)).respondWith(new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null));
             evaluate(scenario, "var a=document.createElement('a');a.href='/api/backup';a.textContent='Export test';a.style='position:fixed;inset:0;width:100%;height:100%;z-index:99999';document.body.appendChild(a);true");
-            awaitPaint(scenario);
-            onView(withId(MainActivity.WEB_VIEW_ID)).perform(click());
+            touchWebView(scenario);
             awaitPicker(Intent.ACTION_CREATE_DOCUMENT);
             assertEquals("true", evaluate(scenario, "document.readyState === 'complete' && location.origin === " + JSONObject.quote(session.origin)));
             assertEquals(200, request(session, "/__health", session.cookiePair, null).status);
