@@ -1065,6 +1065,16 @@ code {
   }
 }
 
+.mobile-edition-note {
+  margin: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid #d8dedb;
+  background: #edf3ef;
+  color: #31483f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

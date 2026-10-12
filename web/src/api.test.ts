@@ -5,9 +5,19 @@ import {
   getRuns,
   getTrace,
   requestJson,
+  resumeRun,
 } from "./api";
 
 describe("typed API client", () => {
+  it("sends a JSON object when resuming through the packaged local transport", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await resumeRun("run-id");
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/v1/runs/run-id/resume");
+    expect(init.body).toBe("{}");
+    expect(new Headers(init.headers).get("content-type")).toBe("application/json");
+  });
   it("preserves stable server errors without leaking response bodies", async () => {
     vi.stubGlobal(
       "fetch",

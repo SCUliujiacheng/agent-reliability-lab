@@ -24,6 +24,12 @@ The same suite runs in two modes. `fragile` stops after a tool failure; `resilie
 
 The difference comes from `timeout-recovery` and `rate-limit-recovery`. After an injected first-attempt failure, resilient mode retries once and completes each case. A 6/6 result only covers these six synthetic scenarios. Metrics are recomputed from traces; see the [metric definitions](docs/benchmark-results.md) and [committed baseline](benchmarks/baseline-report.json).
 
+## Download an app
+
+The [v0.2.0 prerelease](https://github.com/SCUliujiacheng/agent-reliability-lab/releases/tag/v0.2.0) includes Windows x64, macOS Apple silicon/Intel, and Android downloads. The desktop ZIPs bundle Python and the dashboard; Android runs the six incident scenarios on the device. No Python, Node.js, API key, or model download is needed to use these apps.
+
+The desktop application uses the existing engine. The Android edition has its own small offline runner, with persistent traces, approvals, restart recovery, and metrics recomputed from its runs. Its reports are marked `mobile/v1`; the full CLI, provider adapter, and desktop evidence gate remain available from source. See [installation, data locations, and validation scope](docs/downloads.md).
+
 ## Run locally
 
 Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 22.20+. The single-line commands below work in PowerShell and Bash.

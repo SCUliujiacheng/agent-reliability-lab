@@ -1,0 +1,12 @@
+{
+  "slug": "agent-reliability-lab",
+  "name": "Agent Reliability Lab",
+  "version": "0.2.0",
+  "desktop_module": "distribution.desktop_app",
+  "health_path": "/health",
+  "android_application_id": "org.sculiujiacheng.agentlab.en",
+  "android_version_code": 20000,
+  "python_package": "agent_reliability_lab",
+  "python_distribution": "agent-reliability-lab",
+  "export_paths": ["/v1/export"]
+}

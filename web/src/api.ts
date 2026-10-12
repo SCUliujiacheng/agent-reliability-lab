@@ -226,5 +226,6 @@ export function approveRun(runId: string, input: ApprovalInput): Promise<RunSumm
 export function resumeRun(runId: string): Promise<RunSummary> {
   return requestJson(`/v1/runs/${encodeURIComponent(runId)}/resume`, {
     method: "POST",
+    body: "{}",
   });
 }

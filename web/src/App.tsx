@@ -172,6 +172,9 @@ function Dashboard() {
 export function App() {
   return (
     <ErrorBoundary>
+      {document.querySelector('meta[name="arl-runtime"][content="mobile"]') !== null && (
+        <p className="mobile-edition-note" role="note">Offline mobile edition · Six synthetic incident scenarios, local approvals and traces. The full CLI and external model providers require the source edition.</p>
+      )}
       <Dashboard />
     </ErrorBoundary>
   );

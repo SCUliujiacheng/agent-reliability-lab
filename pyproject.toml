@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-reliability-lab"
-version = "0.1.1"
+version = "0.2.0"
 description = "A local-first platform for evaluating tool-using agent reliability."
 requires-python = ">=3.12"
 dependencies = [
@@ -23,6 +23,9 @@ dependencies = [
 arl = "agent_reliability_lab.cli:app"
 
 [dependency-groups]
+build = [
+    "pyinstaller>=6.16,<7",
+]
 dev = [
   "mypy>=1.13,<2",
   "pytest>=9.1.1,<10",

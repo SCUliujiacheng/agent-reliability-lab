@@ -19,6 +19,15 @@ artifacts/
 web/node_modules/
 web/dist/
 web/coverage/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+distribution/build/
+distribution/dist/
+dist/
+build/
+*.spec
 .playwright-cli/
 docs/architecture/*.visual-check.*
 .env

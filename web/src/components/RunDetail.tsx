@@ -43,6 +43,7 @@ export function RunDetail({
   const outcome = run.result?.outcome ?? (run.status === "waiting_approval" ? "Pending review" : "Not available");
   const pending = mutationState === "pending" || state === "loading";
   const approval = run.pending_approval;
+  const mobileEdition = document.querySelector('meta[name="arl-runtime"][content="mobile"]') !== null;
 
   return (
     <main className="detail-page" id="runs">
@@ -52,7 +53,9 @@ export function RunDetail({
           Back to runs
         </button>
         <div className="detail-actions">
-          <button type="button" className="secondary-button" onClick={() => exportTrace(run, events)}>Export trace</button>
+          {mobileEdition
+            ? <a className="secondary-button" href={`/v1/export?run_id=${encodeURIComponent(run.id)}`}>Export trace</a>
+            : <button type="button" className="secondary-button" onClick={() => exportTrace(run, events)}>Export trace</button>}
           <button type="button" className="primary-button" onClick={onRunAgain} disabled={pending}>Run again</button>
         </div>
       </div>

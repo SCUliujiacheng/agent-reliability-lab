@@ -5,6 +5,18 @@ import { RunDetail } from "./RunDetail";
 import { pendingApprovalFixture, runFixture, traceFixture } from "../test/fixtures";
 
 describe("RunDetail", () => {
+  it("uses a same-origin download link in the packaged Android edition", () => {
+    const marker = document.createElement("meta");
+    marker.name = "arl-runtime";
+    marker.content = "mobile";
+    document.head.append(marker);
+    try {
+      render(<RunDetail run={runFixture()} events={traceFixture} state="ready" mutationState="idle" onBack={vi.fn()} onRunAgain={vi.fn()} onApprove={vi.fn()} />);
+      expect(screen.getByRole("link", { name: "Export trace" })).toHaveAttribute("href", "/v1/export?run_id=11111111-1111-1111-1111-111111111111");
+    } finally {
+      marker.remove();
+    }
+  });
   it("keeps mobile summary facts, status text, trace, and actions semantic", async () => {
     const onBack = vi.fn();
     const onRunAgain = vi.fn();
