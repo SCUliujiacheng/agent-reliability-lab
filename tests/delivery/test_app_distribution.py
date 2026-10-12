@@ -50,11 +50,17 @@ def bundle_source(tmp_path_factory):
         source / "benchmarks/baseline-report.json",
     )
     shutil.copyfile(ROOT / "LICENSE", source / "LICENSE")
+    shutil.copytree(ROOT / "licenses", source / "licenses")
     (source / "distribution").mkdir()
     for path in (ROOT / "distribution").glob("*.py"):
         shutil.copyfile(path, source / "distribution" / path.name)
     shutil.copyfile(ROOT / "distribution/app.json", source / "distribution/app.json")
     (source / "web/dist").mkdir(parents=True)
+    # This fixture's plain HTML has no npm dependencies; production notices are
+    # checked separately using real installed packages during release preparation.
+    (source / "web/package-lock.json").write_text(
+        json.dumps({"lockfileVersion": 3, "packages": {}}), encoding="utf-8"
+    )
     (source / "web/dist/index.html").write_text(
         "<!doctype html><html><head><title>Test dashboard</title></head><body>Test dashboard</body></html>",
         encoding="utf-8",
@@ -585,6 +591,11 @@ def test_android_python_preparation_removes_old_generated_modules(
         "mobile_app.py",
         "portable_host.py",
     ]
+    manifest = load_adapter("collect_licenses").verify_licenses(assets / "licenses")
+    assert manifest["target"] == "android"
+    assert {"CPython", "Chaquopy"} <= {
+        component["name"] for component in manifest["components"]
+    }
 
 
 def test_upgrade_does_not_relabel_existing_evaluation_provenance(

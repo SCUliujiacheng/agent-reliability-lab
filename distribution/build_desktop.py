@@ -3,7 +3,6 @@
 import argparse
 import hashlib
 import importlib
-import importlib.metadata
 import json
 import os
 import platform
@@ -55,26 +54,9 @@ def main():
     (resources / "app.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    licenses = resources / "licenses" / "python"
-    for package in importlib.metadata.distributions():
-        for item in package.files or []:
-            if any(
-                part.lower()
-                in {
-                    "licenses",
-                    "license",
-                    "license.txt",
-                    "license.md",
-                    "copying",
-                    "notice",
-                }
-                for part in item.parts
-            ) and ".dist-info" in str(item):
-                source = Path(package.locate_file(item))
-                if source.is_file():
-                    destination = licenses / str(item)
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source, destination)
+    importlib.import_module("distribution.collect_licenses").collect_licenses(
+        ROOT, resources, target="desktop"
+    )
     if args.prepare_only:
         print(resources)
         return

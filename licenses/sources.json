@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "chaquopy_target": "3.13.9-0",
+  "components": [
+    {
+      "name": "CPython",
+      "version": "3.13.9",
+      "file": "CPython-3.13.9-LICENSE.txt",
+      "source": "https://raw.githubusercontent.com/python/cpython/v3.13.9/LICENSE",
+      "sha256": "78b12c3a81360b357002334f0e70ea0e92eebf7a9b358805c03c48484945f3bb"
+    },
+    {
+      "name": "Chaquopy",
+      "version": "17.0.0",
+      "file": "Chaquopy-17.0.0-LICENSE.txt",
+      "source": "https://raw.githubusercontent.com/chaquo/chaquopy/17.0.0/LICENSE.txt",
+      "sha256": "345a9fdfeed355d37b18569ef277ba56eb0ab7c0b17a08a90163ce8d33d2b862"
+    }
+  ]
+}

@@ -4,7 +4,49 @@ import hashlib
 import json
 import subprocess
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+
+def validate_licenses(archive, base, target, *, has_frontend):
+    """Check notices from the actual final archive, not only a source manifest."""
+    try:
+        manifest = json.loads(archive.read(base + "components.json"))
+        if manifest["schema_version"] != 1 or manifest["target"] != target:
+            raise ValueError("Wrong license manifest format or target")
+        components = manifest["components"]
+        names = {item["name"] for item in components}
+        required = {"CPython"} | ({"Chaquopy"} if target == "android" else set())
+        if has_frontend:
+            required |= {"react", "react-dom"}
+        if not required <= names:
+            raise ValueError("Missing runtime or frontend notices")
+        for item in components:
+            if not item["version"] or not item["source"] or not item["license_files"]:
+                raise ValueError("Incomplete component provenance")
+            if item["name"] == "CPython":
+                valid_version = (
+                    item["version"] == "3.13.9"
+                    if target == "android"
+                    else item["version"].startswith("3.12.")
+                )
+                if not valid_version:
+                    raise ValueError(
+                        "License does not match the bundled CPython version"
+                    )
+            if item["name"] == "Chaquopy" and item["version"] != "17.0.0":
+                raise ValueError("License does not match Chaquopy")
+            for notice in item["license_files"]:
+                path = PurePosixPath(notice["path"])
+                if path.is_absolute() or ".." in path.parts or "\\" in notice["path"]:
+                    raise ValueError("Invalid notice path")
+                payload = archive.read(base + notice["path"])
+                if (
+                    not payload.strip()
+                    or hashlib.sha256(payload).hexdigest() != notice["sha256"]
+                ):
+                    raise ValueError("Missing, empty or changed license text")
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        raise RuntimeError(f"Invalid bundled licenses: {base}: {exc}") from exc
 
 
 def main():
@@ -54,6 +96,22 @@ def main():
                     or metadata.get("build_revision") != revision
                 ):
                     raise RuntimeError(f"Wrong APK version or source revision: {name}")
+            target = "desktop" if name.endswith(".zip") else "android"
+            suffix = (
+                "resources/licenses/components.json"
+                if target == "desktop"
+                else "assets/application/licenses/components.json"
+            )
+            manifests = [entry for entry in names if entry.endswith(suffix)]
+            if len(manifests) != 1:
+                raise RuntimeError(f"Missing or ambiguous runtime notices: {name}")
+            validate_licenses(
+                archive,
+                manifests[0].removesuffix("components.json"),
+                target,
+                has_frontend=(root / "frontend/package.json").exists()
+                or (root / "web/package.json").exists(),
+            )
         with asset.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         sums.append(f"{digest}  {name}\n")

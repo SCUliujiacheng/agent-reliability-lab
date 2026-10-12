@@ -113,7 +113,7 @@ final class SafeFiles {
             throw new IOException("Invalid chosen save location");
         }
         try (InputStream input = new FileInputStream(file.file);
-             OutputStream output = context.getContentResolver().openOutputStream(destination, "w")) {
+             OutputStream output = context.getContentResolver().openOutputStream(destination, "wt")) {
             if (output == null) throw new IOException("Cannot open chosen destination");
             BoundaryPolicy.copyBounded(input, output, EXPORT_LIMIT);
             output.flush();

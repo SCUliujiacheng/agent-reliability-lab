@@ -11,6 +11,7 @@ from pathlib import Path
 from agent_reliability_lab.scenarios.loader import load_scenario, scenario_sha256
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from distribution.collect_licenses import collect_licenses
 from distribution.resource_staging import reset_resources
 
 
@@ -126,6 +127,7 @@ def main():
     python_dir = reset_resources(root, args.python_dir)
     for name in ("portable_host.py", "mobile_app.py"):
         shutil.copyfile(root / "distribution" / name, python_dir / name)
+    collect_licenses(root, args.assets_dir, target="android")
 
 
 if __name__ == "__main__":

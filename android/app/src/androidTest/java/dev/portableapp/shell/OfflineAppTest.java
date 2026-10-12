@@ -65,6 +65,36 @@ public final class OfflineAppTest {
         fail("Packaged application did not render in the real WebView");
     }
 
+    private static void awaitPaint(ActivityScenario<MainActivity> scenario) throws Exception {
+        // JavaScript completion is not a renderer-frame acknowledgement. Wait until
+        // the injected control can be drawn before sending a real touch event.
+        CountDownLatch painted = new CountDownLatch(1);
+        scenario.onActivity(activity -> {
+            WebView view = activity.findViewById(MainActivity.WEB_VIEW_ID);
+            view.postVisualStateCallback(1, new WebView.VisualStateCallback() {
+                @Override public void onComplete(long requestId) { painted.countDown(); }
+            });
+            view.invalidate();
+        });
+        assertTrue("WebView did not commit the picker control", painted.await(15, TimeUnit.SECONDS));
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    }
+
+    private static void awaitPicker(String action) throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < until) {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            for (Intent intent : Intents.getIntents()) {
+                if (action.equals(intent.getAction())) {
+                    intended(hasAction(action));
+                    return;
+                }
+            }
+            Thread.sleep(100);
+        }
+        fail("Native picker was not requested: " + action);
+    }
+
     private static Reply request(PortableRuntime.Session session, String path, String cookie, String body) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(session.origin + path).openConnection();
         connection.setConnectTimeout(5000);
@@ -155,9 +185,9 @@ public final class OfflineAppTest {
             awaitPage(scenario);
             intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null));
             evaluate(scenario, "var i=document.createElement('input');i.type='file';i.accept='.json,application/json';i.style='position:fixed;inset:0;width:100%;height:100%;z-index:99999';document.body.appendChild(i);true");
+            awaitPaint(scenario);
             onView(withId(MainActivity.WEB_VIEW_ID)).perform(click());
-            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            intended(hasAction(Intent.ACTION_OPEN_DOCUMENT));
+            awaitPicker(Intent.ACTION_OPEN_DOCUMENT);
             assertEquals("true", evaluate(scenario, "document.readyState === 'complete'"));
         } finally { Intents.release(); }
     }
@@ -170,19 +200,9 @@ public final class OfflineAppTest {
             awaitPage(scenario);
             intending(hasAction(Intent.ACTION_CREATE_DOCUMENT)).respondWith(new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null));
             evaluate(scenario, "var a=document.createElement('a');a.href='/api/backup';a.textContent='Export test';a.style='position:fixed;inset:0;width:100%;height:100%;z-index:99999';document.body.appendChild(a);true");
+            awaitPaint(scenario);
             onView(withId(MainActivity.WEB_VIEW_ID)).perform(click());
-            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-            boolean pickerRequested = false;
-            while (System.nanoTime() < until) {
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-                for (Intent intent : Intents.getIntents()) {
-                    if (Intent.ACTION_CREATE_DOCUMENT.equals(intent.getAction())) pickerRequested = true;
-                }
-                if (pickerRequested) break;
-                Thread.sleep(100);
-            }
-            assertTrue("Native export did not request the user-selected destination", pickerRequested);
-            intended(hasAction(Intent.ACTION_CREATE_DOCUMENT));
+            awaitPicker(Intent.ACTION_CREATE_DOCUMENT);
             assertEquals("true", evaluate(scenario, "document.readyState === 'complete' && location.origin === " + JSONObject.quote(session.origin)));
             assertEquals(200, request(session, "/__health", session.cookiePair, null).status);
         } finally { Intents.release(); }
@@ -220,6 +240,11 @@ public final class OfflineAppTest {
             assertEquals("{\"fixture\":\"真实文件读写\"}", data.toString(StandardCharsets.UTF_8.name()));
         }
         Uri saved = Uri.parse("content://" + authority + "/saved.json");
+        // Replacing a larger prior export must remove its old tail, not corrupt JSON.
+        try (java.io.OutputStream old = context.getContentResolver().openOutputStream(saved, "wt")) {
+            assertNotNull(old);
+            old.write(new byte[4096]);
+        }
         SafeFiles.saveDocument(context, selected, saved);
         try (InputStream input = context.getContentResolver().openInputStream(saved)) {
             ByteArrayOutputStream data = new ByteArrayOutputStream();
